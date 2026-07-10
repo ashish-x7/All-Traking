@@ -1,0 +1,1 @@
+export default function ResultTable(){return <>Result</>}

@@ -1,0 +1,1 @@
+export default function UploadBox(){return <>Upload</>}

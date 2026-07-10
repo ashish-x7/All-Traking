@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrackShip - Smart Courier Tracking Dashboard</title>
+    <meta name="description" content="Automated courier tracking dashboard supporting multiple logistics partners including Blue Dart, Delhivery, DTDC, India Post, and more.">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+    <div class="glass-bg-glow"></div>
+    <div class="app-container">
+        <!-- Sidebar / Navigation -->
+        <header class="app-header">
+            <div class="logo-section">
+                <div class="logo-icon">
+                    <i data-lucide="package-search"></i>
+                </div>
+                <div class="logo-text">
+                    <h1>TrackShip</h1>
+                    <span>Courier Tracking System</span>
+                </div>
+            </div>
+            <div class="header-actions">
+                <div class="server-status">
+                    <span class="status-dot online"></span>
+                    <span>API Connected</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="dashboard-main">
+            <!-- Stats Row -->
+            <section class="stats-grid" id="stats-section" style="display: none;">
+                <div class="stat-card">
+                    <div class="stat-icon total">
+                        <i data-lucide="list"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3>Total Shipments</h3>
+                        <p id="stat-total">0</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon delivered">
+                        <i data-lucide="check-circle-2"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3>Delivered</h3>
+                        <p id="stat-delivered">0</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon transit">
+                        <i data-lucide="truck"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3>In Transit</h3>
+                        <p id="stat-transit">0</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon failed">
+                        <i data-lucide="alert-triangle"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3>Exceptions / Failed</h3>
+                        <p id="stat-failed">0</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Main Interactive Section -->
+            <div class="dashboard-grid">
+                <!-- Left panel: Controls and progress -->
+                <div class="panel-left">
+                    <!-- Upload Card -->
+                    <section class="dashboard-card upload-card" id="upload-panel">
+                        <h2>Upload Shipments</h2>
+                        <p class="card-subtitle">Upload CSV/Excel file containing tracking numbers and courier partner names</p>
+                        
+                        <div class="drop-zone" id="drop-zone">
+                            <i data-lucide="cloud-upload" class="upload-cloud-icon"></i>
+                            <p class="drop-text">Drag & drop your tracking sheet here, or <span class="browse-btn">browse files</span></p>
+                            <span class="file-hint">Supports .csv, .xlsx, .xls</span>
+                            <input type="file" id="file-input" accept=".csv, .xlsx, .xls" hidden>
+                        </div>
+                        
+                        <div class="selected-file-container" id="selected-file-container" style="display: none;">
+                            <div class="file-info-box">
+                                <i data-lucide="file-spreadsheet" class="file-icon"></i>
+                                <div class="file-metadata">
+                                    <span class="file-name" id="selected-file-name">filename.csv</span>
+                                    <span class="file-size" id="selected-file-size">0 KB</span>
+                                </div>
+                                <button class="btn-icon remove-file-btn" id="remove-file-btn" title="Remove file">
+                                    <i data-lucide="x"></i>
+                                </button>
+                            </div>
+                            
+                            <div class="action-row">
+                                <button class="btn btn-primary btn-full" id="start-tracking-btn">
+                                    <i data-lucide="play"></i> Start Tracking
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="scaffold-info">
+                            <a href="/static/sample.csv" download class="sample-link">
+                                <i data-lucide="download"></i> Download Sample CSV Template
+                            </a>
+                        </div>
+                    </section>
+
+                    <!-- Active Tracking Progress Card -->
+                    <section class="dashboard-card progress-card" id="progress-panel" style="display: none;">
+                        <div class="card-header-flex">
+                            <h2>Tracking Progress</h2>
+                            <span class="badge badge-pulse" id="tracking-status-badge">Processing</span>
+                        </div>
+                        
+                        <div class="progress-details">
+                            <div class="progress-bar-container">
+                                <div class="progress-bar-fill" id="progress-bar-fill" style="width: 0%;"></div>
+                            </div>
+                            <div class="progress-labels">
+                                <span id="progress-text">Initializing tracking engine...</span>
+                                <span id="progress-percent">0%</span>
+                            </div>
+                        </div>
+
+                        <!-- Live Console Log output -->
+                        <div class="console-log-box">
+                            <div class="console-header">
+                                <span class="console-title">Live Tracking Log</span>
+                                <span class="console-indicator"></span>
+                            </div>
+                            <div class="console-content" id="console-log">
+                                <div class="log-entry system">[SYSTEM]: Tracking engine initialized. Waiting for task...</div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Right panel: Results and actions -->
+                <div class="panel-right">
+                    <!-- Results Card -->
+                    <section class="dashboard-card results-card" id="results-panel">
+                        <div class="results-header">
+                            <div>
+                                <h2>Shipment Directory</h2>
+                                <p class="card-subtitle">Manage, search and export your scanned tracking status</p>
+                            </div>
+                            <button class="btn btn-success" id="export-btn" disabled>
+                                <i data-lucide="download"></i> Export Results
+                            </button>
+                        </div>
+
+                        <!-- Search and Filter Bar -->
+                        <div class="filters-bar">
+                            <div class="search-box">
+                                <i data-lucide="search" class="search-icon"></i>
+                                <input type="text" id="search-input" placeholder="Search tracking number or courier...">
+                            </div>
+                            <div class="filter-dropdowns">
+                                <select id="filter-courier">
+                                    <option value="all">All Couriers</option>
+                                    <option value="bluedart">Blue Dart</option>
+                                    <option value="delhivery">Delhivery</option>
+                                    <option value="dtdc">DTDC</option>
+                                    <option value="ecomexpress">Ecom Express</option>
+                                    <option value="ekart">Ekart</option>
+                                    <option value="indiapost">India Post</option>
+                                    <option value="shadowfax">Shadowfax</option>
+                                    <option value="xpressbees">Xpressbees</option>
+                                </select>
+                                <select id="filter-status">
+                                    <option value="all">All Statuses</option>
+                                    <option value="delivered">Delivered</option>
+                                    <option value="transit">In Transit</option>
+                                    <option value="out_for_delivery">Out for Delivery</option>
+                                    <option value="exception">Failed / Exception</option>
+                                    <option value="pending">Pending</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Table container -->
+                        <div class="table-outer-container">
+                            <table class="results-table" id="results-table">
+                                <thead>
+                                    <tr>
+                                        <th>Courier Partner</th>
+                                        <th>Tracking Number</th>
+                                        <th>Status</th>
+                                        <th>Last Location</th>
+                                        <th>Timestamp</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="table-body">
+                                    <tr class="empty-row">
+                                        <td colspan="5">
+                                            <div class="empty-state">
+                                                <i data-lucide="file-warning"></i>
+                                                <p>No shipments tracked yet. Upload a list to get started.</p>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Script -->
+    <script src="/static/app.js"></script>
+</body>
+</html>
