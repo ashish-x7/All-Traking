@@ -1,6 +1,7 @@
 from .base import BaseScraper
 from playwright.async_api import async_playwright
 import asyncio
+import os
 
 class BlueDartScraper(BaseScraper):
     async def track(self, awb: str) -> dict:
@@ -116,6 +117,13 @@ class BlueDartScraper(BaseScraper):
                         }
                         
                     except Exception as e:
+                        # Capture debug screenshot on Render to see if it's blocked by Cloudflare/Captcha
+                        try:
+                            os.makedirs("static", exist_ok=True)
+                            await page.screenshot(path="static/screenshot.png")
+                        except:
+                            pass
+                            
                         if attempt < max_attempts:
                             await asyncio.sleep(1)
                             continue
