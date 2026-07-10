@@ -188,7 +188,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    clearAllBtn.addEventListener('click', () => {
+    clearAllBtn.addEventListener('click', async () => {
+        try {
+            await fetch('/api/clear', { method: 'DELETE' });
+        } catch (e) {
+            console.error('Failed to clear server data:', e);
+        }
         resetUploadSection();
     });
 
@@ -429,13 +434,56 @@ document.addEventListener('DOMContentLoaded', () => {
         return 'courier-default';
     }
 
+    // --- 30 Unique AWB Color Palettes (bg, text) ---
+    const AWB_COLORS = [
+        { bg: '#dbeafe', text: '#1e40af' },  // Blue
+        { bg: '#fce7f3', text: '#9d174d' },  // Pink
+        { bg: '#d1fae5', text: '#065f46' },  // Emerald
+        { bg: '#fef3c7', text: '#92400e' },  // Amber
+        { bg: '#ede9fe', text: '#5b21b6' },  // Violet
+        { bg: '#ffedd5', text: '#c2410c' },  // Orange
+        { bg: '#cffafe', text: '#155e75' },  // Cyan
+        { bg: '#fecdd3', text: '#9f1239' },  // Rose
+        { bg: '#dcfce7', text: '#166534' },  // Green
+        { bg: '#e0e7ff', text: '#3730a3' },  // Indigo
+        { bg: '#fef9c3', text: '#854d0e' },  // Yellow
+        { bg: '#f3e8ff', text: '#6b21a8' },  // Purple
+        { bg: '#ccfbf1', text: '#134e4a' },  // Teal
+        { bg: '#fee2e2', text: '#991b1b' },  // Red
+        { bg: '#e0f2fe', text: '#075985' },  // Sky
+        { bg: '#fae8ff', text: '#86198f' },  // Fuchsia
+        { bg: '#ecfccb', text: '#3f6212' },  // Lime
+        { bg: '#f1f5f9', text: '#334155' },  // Slate
+        { bg: '#fff1f2', text: '#be123c' },  // Light Rose
+        { bg: '#f0fdfa', text: '#115e59' },  // Light Teal
+        { bg: '#fdf4ff', text: '#a21caf' },  // Light Fuchsia
+        { bg: '#f0fdf4', text: '#14532d' },  // Light Green
+        { bg: '#eff6ff', text: '#1e3a8a' },  // Light Blue
+        { bg: '#fffbeb', text: '#78350f' },  // Light Amber
+        { bg: '#fdf2f8', text: '#831843' },  // Light Pink
+        { bg: '#f5f3ff', text: '#4c1d95' },  // Light Violet
+        { bg: '#ecfdf5', text: '#064e3b' },  // Light Emerald
+        { bg: '#fff7ed', text: '#9a3412' },  // Light Orange
+        { bg: '#f8fafc', text: '#0f172a' },  // Light Slate
+        { bg: '#fefce8', text: '#713f12' },  // Light Yellow
+    ];
+
+    function getAwbColorIndex(trackingNumber) {
+        let hash = 0;
+        for (let i = 0; i < trackingNumber.length; i++) {
+            hash = ((hash << 5) - hash) + trackingNumber.charCodeAt(i);
+            hash |= 0;
+        }
+        return Math.abs(hash) % AWB_COLORS.length;
+    }
+
     // --- Helper UI Renderers ---
 
     function renderTable(dataList) {
         if (dataList.length === 0) {
             tableBody.innerHTML = `
                 <tr class="empty-row">
-                    <td colspan="6">
+                    <td colspan="8">
                         <div class="empty-state">
                             <i data-lucide="file-warning"></i>
                             <p>No matching shipments found.</p>
@@ -443,20 +491,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     </td>
                 </tr>
             `;
-            lucide.createIcons();
             return;
         }
 
         tableBody.innerHTML = '';
-        dataList.forEach(item => {
+        dataList.forEach((item, index) => {
             const tr = document.createElement('tr');
-            
-            // Badge style mapping
+
+            const statusKey = item.status.toLowerCase().replace(/[\s_]+/g, '_');
             let badgeClass = 'badge-pending';
-            const statusKey = mapStatusFilter(item.status);
             if (statusKey === 'delivered') badgeClass = 'badge-delivered';
-            else if (statusKey === 'transit') badgeClass = 'badge-transit';
-            else if (statusKey === 'out_for_delivery') badgeClass = 'badge-out_for_delivery';
+            else if (statusKey === 'in_transit' || statusKey === 'in transit' || statusKey === 'picked_up' || statusKey === 'out_for_delivery' || statusKey === 'out for delivery' || statusKey === 'out_for_pickup') badgeClass = 'badge-transit';
             else if (statusKey === 'exception') badgeClass = 'badge-exception';
 
             // Determine timestamp filled/empty status
@@ -469,15 +514,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const lastSyncBadgeClass = isLastSyncEmpty ? 'lastsync-empty' : 'lastsync-filled';
             const printLastSync = isLastSyncEmpty ? '-' : item.last_sync;
 
+            // Unique row color
+            const awbColor = AWB_COLORS[index % AWB_COLORS.length];
+            const rowTextColor = awbColor.text;
+
             tr.innerHTML = `
-                <td><span class="awb-badge ${getCourierBadgeClass(item.courier)}">${item.tracking_number}</span></td>
+                <td><span style="color:${rowTextColor}">${item.invoice_no || '-'}</span></td>
+                <td><span class="awb-badge" style="color:${rowTextColor}">${item.tracking_number}</span></td>
                 <td><span class="courier-badge ${getCourierBadgeClass(item.courier)}">${item.courier}</span></td>
                 <td><span class="badge ${badgeClass}">${item.status}</span></td>
-                <td><span class="location-badge">${item.last_location || 'Pending scan'}</span></td>
-                <td><span class="timestamp-badge ${timestampBadgeClass}">${printTimestamp}</span></td>
-                <td><span class="lastsync-badge ${lastSyncBadgeClass}">${printLastSync}</span></td>
+                <td><span class="location-badge" style="color:${rowTextColor}">${item.last_location || 'Pending scan'}</span></td>
+                <td><span class="timestamp-badge ${timestampBadgeClass}" style="color:${isTimestampEmpty ? '' : rowTextColor}">${printTimestamp}</span></td>
+                <td><span class="lastsync-badge ${lastSyncBadgeClass}" style="color:${isLastSyncEmpty ? '' : rowTextColor}">${printLastSync}</span></td>
                 <td style="text-align: center;">
-                    <button class="btn-sync-single" title="Sync Status">
+                    <button class="btn-sync-single" title="Sync Status" style="color:${rowTextColor}">
                         <i data-lucide="refresh-cw"></i>
                     </button>
                 </td>
@@ -511,4 +561,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
     }
+
+    // --- Auto-load latest data on page refresh ---
+    async function loadLatestData() {
+        try {
+            const res = await fetch('/api/latest');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data.task_id && data.shipments && data.shipments.length > 0) {
+                state.taskId = data.task_id;
+                state.shipments = data.shipments;
+                state.stats = data.stats;
+                state.filteredShipments = [...state.shipments];
+                state.currentPage = 1;
+                updateStatsUI();
+                renderCurrentPage();
+                exportBtn.disabled = false;
+                clearAllBtn.disabled = false;
+                startTrackingBtn.disabled = false;
+            }
+        } catch (e) {
+            console.log('No previous data to restore.');
+        }
+    }
+
+    // Load saved data on page load
+    loadLatestData();
 });

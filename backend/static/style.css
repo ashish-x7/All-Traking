@@ -206,8 +206,11 @@ body {
 }
 
 .upload-group {
-    flex: 1;
-    min-width: 280px;
+    flex: none;
+    min-width: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 /* Slim Drop Zone */
@@ -221,7 +224,7 @@ body {
     cursor: pointer;
     background-color: var(--input-bg);
     transition: var(--transition-smooth);
-    width: 100%;
+    width: auto;
 }
 
 .drop-zone:hover {
@@ -464,7 +467,7 @@ body {
     width: 100%;
     border-collapse: collapse;
     text-align: left;
-    font-size: 0.85rem;
+    font-size: 1.05rem;
 }
 
 .results-table th {
@@ -473,6 +476,7 @@ body {
     font-weight: 600;
     padding: 12px 16px;
     border-bottom: 1px solid var(--card-border);
+    white-space: nowrap;
 }
 
 .results-table td {
@@ -480,6 +484,7 @@ body {
     border-bottom: 1px solid var(--card-border);
     vertical-align: middle;
     color: var(--text-color);
+    white-space: nowrap !important;
 }
 
 .results-table tbody tr {
@@ -496,7 +501,7 @@ body {
 
 /* Courier Label badge */
 .courier-label {
-    font-weight: 600;
+    font-weight: 400;
     color: var(--accent-primary);
     text-transform: uppercase;
     font-size: 0.75rem;
@@ -507,7 +512,7 @@ body {
 .tracking-id {
     font-family: monospace;
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: 400;
     color: var(--text-color);
 }
 
@@ -517,9 +522,10 @@ body {
     align-items: center;
     padding: 4px 10px;
     border-radius: 50px;
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: 1rem;
+    font-weight: 400;
     text-transform: capitalize;
+    white-space: nowrap !important;
 }
 
 .badge-pending {
@@ -553,10 +559,11 @@ body {
     align-items: center;
     padding: 4px 10px;
     border-radius: 4px;
-    font-size: 0.72rem;
-    font-weight: 700;
+    font-size: 0.95rem;
+    font-weight: 400;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    white-space: nowrap !important;
 }
 
 .courier-delhivery {
@@ -815,77 +822,46 @@ body {
     background-color: var(--accent-secondary);
 }
 
-/* Custom Table Row Badges */
+/* Custom Table Row Text Styles (no boxes) */
 .awb-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 6px 12px;
-    border-radius: 4px;
-    font-size: 0.82rem;
-    font-weight: 600;
+    font-size: 1.05rem;
+    font-weight: 400;
     font-family: monospace;
-    background-color: #f8fafc;
-    color: #334155;
-    border: 1px solid #e2e8f0;
+    white-space: nowrap !important;
 }
 
 .location-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 6px 12px;
-    border-radius: 4px;
-    font-size: 0.78rem;
-    font-weight: 500;
-    background-color: #f8fafc;
-    color: #475569;
-    border: 1px solid #e2e8f0;
-    max-width: 250px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: 1rem;
+    font-weight: 400;
+    white-space: nowrap !important;
 }
 
 .timestamp-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 6px 12px;
-    border-radius: 4px;
-    font-size: 0.78rem;
-    font-weight: 600;
+    font-size: 1rem;
+    font-weight: 400;
+    white-space: nowrap !important;
 }
 
 .timestamp-empty {
-    background-color: #f1f5f9;
     color: #94a3b8;
-    border: 1px solid #e2e8f0;
 }
 
 .timestamp-filled {
-    background-color: #ecfdf5;
-    color: #047857;
-    border: 1px solid #a7f3d0;
+    color: inherit;
 }
 
 .lastsync-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 6px 12px;
-    border-radius: 4px;
-    font-size: 0.78rem;
-    font-weight: 600;
+    font-size: 1rem;
+    font-weight: 400;
     font-family: monospace;
+    white-space: nowrap !important;
 }
 
 .lastsync-empty {
-    background-color: #f1f5f9;
     color: #94a3b8;
-    border: 1px solid #e2e8f0;
 }
 
 .lastsync-filled {
-    background-color: #f0fdfa;
-    color: #0d9488;
-    border: 1px solid #99f6e4;
+    color: inherit;
 }
-
 

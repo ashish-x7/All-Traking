@@ -3,14 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TrackShip - Smart Courier Tracking Dashboard</title>
+    <title>Brandcentral TrackShip - Smart Courier Tracking Dashboard</title>
     <meta name="description" content="Automated courier tracking dashboard supporting multiple logistics partners.">
+    <link rel="icon" type="image/png" href="/static/icon.png">
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="/static/style.css?v=1.0.1">
+    <link rel="stylesheet" href="/static/style.css?v=1.0.4">
     <!-- Lucide Icons CDN -->
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
@@ -19,11 +20,11 @@
         <!-- Header -->
         <header class="app-header">
             <div class="logo-section">
-                <div class="logo-icon">
-                    <i data-lucide="package-search"></i>
+                <div class="logo-icon-img" style="display: flex; align-items: center; justify-content: center;">
+                    <img src="/static/icon.png" alt="Logo" style="width: 38px; height: 38px; border-radius: var(--radius-md); object-fit: contain;">
                 </div>
                 <div class="logo-text">
-                    <h1>TrackShip</h1>
+                    <h1>Brandcentral TrackShip</h1>
                     <span>Courier Tracking System</span>
                 </div>
             </div>
@@ -65,7 +66,7 @@
             <!-- Slim Upload Input -->
             <div class="control-group upload-group">
                 <div class="drop-zone" id="drop-zone">
-                    <i data-lucide="cloud-upload" class="upload-icon"></i>
+                    <i data-lucide="folder-up" class="upload-icon"></i>
                     <span class="drop-text">Drag & drop sheet or <span class="browse-btn">browse files</span></span>
                     <input type="file" id="file-input" accept=".csv, .xlsx, .xls" hidden>
                 </div>
@@ -80,6 +81,7 @@
                         </button>
                     </div>
                 </div>
+                <a href="/static/sample_upload.xlsx" download class="sample-link" style="font-size: 0.75rem; white-space: nowrap; margin-left: 10px;">📥 Sample Excel</a>
             </div>
 
             <!-- Slim Progress Bar -->
@@ -99,7 +101,7 @@
                     <i data-lucide="play"></i> Sync All
                 </button>
                 <button class="btn btn-success" id="export-btn" disabled>
-                    <i data-lucide="download"></i> Export CSV
+                    <i data-lucide="file-spreadsheet"></i> Export Excel
                 </button>
                 <button class="btn btn-danger" id="clear-all-btn" disabled>
                     <i data-lucide="trash-2"></i> Clear All
@@ -151,6 +153,7 @@
                     <table class="results-table" id="results-table">
                         <thead>
                             <tr>
+                                <th>Invoice No.</th>
                                 <th>AWB No.</th>
                                 <th>Courier Partner</th>
                                 <th>Status</th>
@@ -162,7 +165,7 @@
                         </thead>
                         <tbody id="table-body">
                             <tr class="empty-row">
-                                <td colspan="7">
+                                <td colspan="8">
                                     <div class="empty-state">
                                         <i data-lucide="file-warning"></i>
                                         <p>No shipments tracked yet. Upload a sheet to get started.</p>
@@ -198,6 +201,6 @@
     </div>
 
     <!-- Script -->
-    <script src="/static/app.js?v=1.0.1"></script>
+    <script src="/static/app.js?v=1.0.4"></script>
 </body>
 </html>

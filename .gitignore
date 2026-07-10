@@ -31,3 +31,10 @@ backend/uploads/
 # OS Metadata
 .DS_Store
 Thumbs.db
+
+# Databases
+*.db
+*.sqlite
+backend/*.db
+backend/*.sqlite
+
