@@ -59,8 +59,9 @@ class TrackingService:
                     log_level="warning"
                 )
             
-            # small delay between calls
-            await asyncio.sleep(0.5)
+            # small delay between calls (longer for bluedart to prevent rate-limiting)
+            delay = 2.0 if courier.lower() == "bluedart" else 0.5
+            await asyncio.sleep(delay)
             
         # Final update
         await progress_callback(

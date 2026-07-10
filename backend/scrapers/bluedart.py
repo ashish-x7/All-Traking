@@ -13,6 +13,27 @@ class BlueDartScraper(BaseScraper):
             # Bypass headless webdriver detection to resolve Proof of Work / Anti-bot blocks
             await page.add_init_script("delete navigator.__proto__.webdriver;")
             
+            # Intercept and block ads, stylesheets, fonts, images, and trackers to save memory/CPU and speed up load times
+            async def intercept_route(route):
+                req = route.request
+                res_type = req.resource_type
+                url = req.url.lower()
+                
+                # Block assets we don't need for data parsing
+                if res_type in ["image", "media", "font", "stylesheet"]:
+                    await route.abort()
+                    return
+                
+                # Block trackers and ads
+                ignored_domains = ["google", "analytics", "doubleclick", "adsense", "facebook", "fundingchoices", "gstatic"]
+                if any(kw in url for kw in ignored_domains):
+                    await route.abort()
+                    return
+                    
+                await route.continue_()
+                
+            await page.route("**/*", intercept_route)
+            
             # Use trackcourier.io to bypass Blue Dart's official captcha requirement
             url = f"https://trackcourier.io/track-and-trace/blue-dart-courier/{awb}"
             
