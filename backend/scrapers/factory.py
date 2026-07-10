@@ -1,5 +1,6 @@
 from .ekart import EkartScraper
 from .delhivery import DelhiveryScraper
+from .bluedart import BlueDartScraper
 
 class ScraperFactory:
     @staticmethod
@@ -9,6 +10,9 @@ class ScraperFactory:
             return EkartScraper()
         elif "delhivery" in name:
             return DelhiveryScraper()
+        elif "bluedart" in name:
+            return BlueDartScraper()
         # Fallbacks for other couriers can be added here
         return None
+
 
