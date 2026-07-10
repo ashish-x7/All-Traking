@@ -5,10 +5,31 @@ import re
 class EkartScraper(BaseScraper):
     async def track(self, awb: str) -> dict:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--single-process',
+                    '--disable-gpu'
+                ]
+            )
             page = await browser.new_page(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             )
+            
+            # Intercept and block heavy assets to save memory/CPU on low-end servers
+            async def intercept_route(route):
+                if route.request.resource_type in ["image", "media", "font", "stylesheet"]:
+                    await route.abort()
+                else:
+                    await route.continue_()
+            await page.route("**/*", intercept_route)
+            
             url = f"https://www.ekartlogistics.com/ekartlogistics-web/shipmenttrack/{awb}"
             try:
                 # Go to the url and wait until no more network activity
