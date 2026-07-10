@@ -10,6 +10,9 @@ class BlueDartScraper(BaseScraper):
             page = await browser.new_page(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             )
+            # Bypass headless webdriver detection to resolve Proof of Work / Anti-bot blocks
+            await page.add_init_script("delete navigator.__proto__.webdriver;")
+            
             # Use trackcourier.io to bypass Blue Dart's official captcha requirement
             url = f"https://trackcourier.io/track-and-trace/blue-dart-courier/{awb}"
             
