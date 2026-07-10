@@ -57,7 +57,10 @@ class PlaywrightManager:
                             ]
                         )
                     
-                    return await self._browser.new_page(**kwargs)
+                    page = await self._browser.new_page(**kwargs)
+                    # Quick health check to ensure the page context is fully functional and connected
+                    await page.evaluate("() => 1")
+                    return page
                 except Exception as e:
                     print(f"PlaywrightManager new_page exception (attempt {attempt+1}): {e}")
                     # If it's the first attempt, close and reset browser to force relaunch
