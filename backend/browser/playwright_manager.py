@@ -53,7 +53,15 @@ class PlaywrightManager:
                                 '--no-first-run',
                                 '--no-zygote',
                                 '--single-process',
-                                '--disable-gpu'
+                                '--disable-gpu',
+                                '--disable-audio-output',
+                                '--disable-default-apps',
+                                '--disable-extensions',
+                                '--disable-background-networking',
+                                '--disable-sync',
+                                '--disable-translate',
+                                '--log-level=3',
+                                '--disable-logging'
                             ]
                         )
                     
