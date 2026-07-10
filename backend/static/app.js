@@ -188,12 +188,33 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    clearAllBtn.addEventListener('click', async () => {
+    // Custom Delete Modal Elements
+    const deleteModal = document.getElementById('delete-modal');
+    const modalCancelBtn = document.getElementById('modal-cancel-btn');
+    const modalConfirmBtn = document.getElementById('modal-confirm-btn');
+
+    clearAllBtn.addEventListener('click', () => {
+        deleteModal.style.display = 'flex';
+    });
+
+    modalCancelBtn.addEventListener('click', () => {
+        deleteModal.style.display = 'none';
+    });
+
+    // Close modal if user clicks outside the modal card
+    deleteModal.addEventListener('click', (e) => {
+        if (e.target === deleteModal) {
+            deleteModal.style.display = 'none';
+        }
+    });
+
+    modalConfirmBtn.addEventListener('click', async () => {
         try {
             await fetch('/api/clear', { method: 'DELETE' });
         } catch (e) {
             console.error('Failed to clear server data:', e);
         }
+        deleteModal.style.display = 'none';
         resetUploadSection();
     });
 
