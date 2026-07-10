@@ -20,10 +20,25 @@ class TrackingService:
             scraper = ScraperFactory.get_scraper(courier)
             if scraper:
                 try:
+                    # Log API call
+                    try:
+                        import sqlite3
+                        db_conn = sqlite3.connect("tracking.db")
+                        db_conn.execute("INSERT INTO api_usage DEFAULT VALUES;")
+                        db_conn.commit()
+                        db_conn.close()
+                    except Exception as db_err:
+                        print("Failed to record api usage in service:", db_err)
+
                     result = await scraper.track(awb)
+                    
+                    from datetime import datetime
+                    last_sync_str = datetime.now().strftime("%d-%m-%Y %I:%M:%S %p")
+                    
                     shipment["status"] = result["status"]
                     shipment["last_location"] = result["last_location"]
                     shipment["timestamp"] = result["timestamp"]
+                    shipment["last_sync"] = last_sync_str
                     
                     log_level = "success" if "delivered" in result["status"].lower() else "info"
                     if "error" in result["status"].lower() or "invalid" in result["status"].lower():
@@ -40,8 +55,12 @@ class TrackingService:
                     tb = traceback.format_exc()
                     print(f"--- SCRAPER EXCEPTION TRACEBACK ---\n{tb}------------------------------------")
                     error_msg = str(e) or type(e).__name__
+                    from datetime import datetime
+                    last_sync_str = datetime.now().strftime("%d-%m-%Y %I:%M:%S %p")
+                    
                     shipment["status"] = "Scrape Failed"
                     shipment["last_location"] = error_msg
+                    shipment["last_sync"] = last_sync_str
                     await progress_callback(
                         progress=int(((i + 1) / total) * 100),
                         current_action=f"Error tracking {awb}",
