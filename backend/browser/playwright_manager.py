@@ -14,6 +14,14 @@ class PlaywrightManager:
 
     async def get_browser(self) -> Browser:
         async with self._lock:
+            # If browser is disconnected or crashed, reset it
+            if self._browser is not None and not self._browser.is_connected:
+                try:
+                    await self._browser.close()
+                except:
+                    pass
+                self._browser = None
+
             if self._browser is None:
                 if self._playwright is None:
                     self._playwright = await async_playwright().start()
