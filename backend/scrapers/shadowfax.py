@@ -6,8 +6,7 @@ import os
 class ShadowfaxScraper(BaseScraper):
     async def track(self, awb: str) -> dict:
         from browser.playwright_manager import playwright_manager
-        browser = await playwright_manager.get_browser()
-        page = await browser.new_page(
+        page = await playwright_manager.new_page(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
         # Bypass headless webdriver detection to resolve Proof of Work / Anti-bot blocks
