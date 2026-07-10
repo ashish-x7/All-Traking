@@ -23,8 +23,8 @@ class BlueDartScraper(BaseScraper):
                         # Use domcontentloaded to load page quickly and ignore slow ads/trackers
                         await page.goto(url, wait_until="domcontentloaded", timeout=20000)
                         
-                        # Wait up to 15 seconds for the actual tracking result to load (will raise on timeout)
-                        await page.wait_for_selector("li.checkpoint.ng-scope:not(.ng-hide), .additional-info:not(:empty)", timeout=15000)
+                        # Wait up to 15 seconds for the actual tracking result elements to be attached to the DOM
+                        await page.wait_for_selector("li.checkpoint.ng-scope, .additional-info:not(:empty)", state="attached", timeout=15000)
                         
                         # Evaluate and extract the tracking checkpoints using JS
                         result = await page.evaluate("""() => {
