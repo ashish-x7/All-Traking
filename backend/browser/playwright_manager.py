@@ -52,7 +52,6 @@ class PlaywrightManager:
                                 '--disable-accelerated-2d-canvas',
                                 '--no-first-run',
                                 '--no-zygote',
-                                '--single-process',
                                 '--disable-gpu',
                                 '--disable-audio-output',
                                 '--disable-default-apps',
