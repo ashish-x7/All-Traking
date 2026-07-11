@@ -1026,6 +1026,42 @@ body {
     padding: 8px 14px;
 }
 
+/* Result Modal Styling */
+.result-modal-card {
+    max-width: 460px !important;
+    width: 90%;
+    animation: slideUp 0.3s ease;
+}
+
+.result-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #f1f5f9;
+    padding: 8px 0;
+}
+
+.result-row:last-child {
+    border-bottom: none;
+}
+
+.result-label {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+.result-value {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.monospace-val {
+    font-family: monospace;
+    font-size: 0.95rem;
+}
+
 /* Animations */
 @keyframes fadeIn {
     from { opacity: 0; }

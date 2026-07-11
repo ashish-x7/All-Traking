@@ -635,11 +635,10 @@ document.addEventListener('DOMContentLoaded', () => {
         quickTrackBtn.disabled = true;
 
         try {
-            const res = await fetch('/api/track/add_single', {
+            const res = await fetch('/api/track/query_single', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    task_id: state.taskId,
                     tracking_number: awb,
                     courier: courier
                 })
@@ -647,34 +646,65 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (!res.ok) {
                 const errData = await res.json();
-                throw new Error(errData.detail || 'Failed to add and track AWB');
+                throw new Error(errData.detail || 'Failed to query AWB');
             }
 
             const data = await res.json();
 
-            // Update application state
-            state.taskId = data.task_id;
-            state.shipments = data.shipments;
-            state.stats = data.stats;
-
-            // Enable buttons
-            exportBtn.disabled = false;
-            clearAllBtn.disabled = false;
-            startTrackingBtn.disabled = false;
+            // Update API Hits counter in state and UI
+            state.stats.api_calls = data.api_calls;
+            statApi.textContent = data.api_calls;
 
             // Clear inputs
             quickAwbInput.value = '';
             quickCourierSelect.value = '';
 
-            // Apply filters and render
-            applyFilters();
-            recalculateStats();
+            // Populate and show Result Modal
+            document.getElementById('res-awb').textContent = data.tracking_number;
+            
+            // Courier Badge
+            const resCourier = document.getElementById('res-courier');
+            resCourier.innerHTML = `<span class="courier-badge ${getCourierBadgeClass(data.courier)}">${data.courier}</span>`;
+            
+            // Status Badge
+            const statusKey = data.status.toLowerCase().replace(/[\s_]+/g, '_');
+            let badgeClass = 'badge-pending';
+            if (statusKey === 'delivered') badgeClass = 'badge-delivered';
+            else if (statusKey === 'in_transit' || statusKey === 'in transit' || statusKey === 'picked_up' || statusKey === 'out_for_delivery' || statusKey === 'out for delivery' || statusKey === 'out_for_pickup') badgeClass = 'badge-transit';
+            else if (statusKey === 'exception') badgeClass = 'badge-exception';
+            
+            const resStatus = document.getElementById('res-status');
+            resStatus.innerHTML = `<span class="badge ${badgeClass}">${data.status}</span>`;
+            
+            document.getElementById('res-location').textContent = data.last_location || 'Pending scan';
+            document.getElementById('res-timestamp').textContent = data.timestamp || '-';
+            
+            // Show modal
+            resultModal.style.display = 'flex';
+            lucide.createIcons();
 
         } catch (error) {
             alert(`Error: ${error.message}`);
         } finally {
             quickTrackBtn.innerHTML = originalBtnHtml;
             quickTrackBtn.disabled = false;
+        }
+    });
+
+    // Result Modal close handlers
+    const resultModal = document.getElementById('result-modal');
+    const resModalCloseX = document.getElementById('result-modal-close-x');
+    const resModalCloseBtn = document.getElementById('result-modal-close-btn');
+
+    function closeResultModal() {
+        resultModal.style.display = 'none';
+    }
+
+    resModalCloseX.addEventListener('click', closeResultModal);
+    resModalCloseBtn.addEventListener('click', closeResultModal);
+    resultModal.addEventListener('click', (e) => {
+        if (e.target === resultModal) {
+            closeResultModal();
         }
     });
 

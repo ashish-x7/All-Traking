@@ -245,6 +245,48 @@
         </div>
     </div>
 
+    <!-- Custom Single AWB Result Modal -->
+    <div id="result-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-card result-modal-card">
+            <div class="modal-header-section" style="border-bottom: 1px solid var(--card-border); padding-bottom: 12px; margin-bottom: 16px; display: flex; align-items: center;">
+                <i data-lucide="shield-check" class="modal-success-icon" style="width: 48px; height: 48px; color: #10b981; background-color: #d1fae5; padding: 10px; border-radius: 50%;"></i>
+                <h3 style="margin-left: 12px; margin-top: 0; margin-bottom: 0;">Tracking Details Found</h3>
+                <button class="modal-close-x" id="result-modal-close-x" style="background: none; border: none; cursor: pointer; color: var(--text-muted); margin-left: auto; display: flex; align-items: center; padding: 4px;">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            
+            <div class="modal-body-section" style="display: flex; flex-direction: column; gap: 14px; text-align: left;">
+                <div class="result-row">
+                    <span class="result-label">AWB Number:</span>
+                    <span class="result-value monospace-val" id="res-awb">-</span>
+                </div>
+                <div class="result-row">
+                    <span class="result-label">Courier Partner:</span>
+                    <span id="res-courier">-</span>
+                </div>
+                <div class="result-row">
+                    <span class="result-label">Current Status:</span>
+                    <span id="res-status">-</span>
+                </div>
+                <div class="result-row">
+                    <span class="result-label">Last Location:</span>
+                    <span class="result-value" id="res-location">-</span>
+                </div>
+                <div class="result-row">
+                    <span class="result-label">Last Event Time:</span>
+                    <span class="result-value" id="res-timestamp">-</span>
+                </div>
+            </div>
+            
+            <div class="modal-actions-section" style="margin-top: 24px; display: flex; justify-content: center;">
+                <button class="btn btn-primary" id="result-modal-close-btn" style="width: 100%; justify-content: center;">
+                    <i data-lucide="check"></i> Done
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Script -->
     <script src="/static/app.js?v=1.0.4"></script>
 </body>
