@@ -315,6 +315,132 @@ async def run_tracking_simulation(task_id: str):
         conn.close()
 
 
+class AddSingleRequest(BaseModel):
+    task_id: Optional[str] = None
+    tracking_number: str
+    courier: str
+
+@app.post('/api/track/add_single')
+async def add_single_shipment(body: AddSingleRequest):
+    task_id = body.task_id
+    awb = body.tracking_number.strip()
+    courier = body.courier.strip()
+    
+    if not awb or not courier:
+        raise HTTPException(status_code=400, detail="AWB number and Courier are required")
+        
+    scraper = ScraperFactory.get_scraper(courier)
+    if not scraper:
+        raise HTTPException(status_code=400, detail=f"Courier '{courier}' not supported")
+        
+    # Generate new task_id if not present
+    if not task_id:
+        task_id = str(uuid.uuid4())
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("INSERT INTO tasks (task_id, status, progress, current_action) VALUES (?, ?, ?, ?)",
+                     (task_id, "completed", 100, "Idle"))
+        conn.commit()
+        conn.close()
+        
+    # Check duplicate
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM shipments WHERE task_id = ? AND tracking_number = ?", (task_id, awb))
+    exists = cursor.fetchone()
+    if exists:
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"AWB {awb} is already added in this session")
+        
+    # Insert new record as Pending
+    cursor.execute("""
+    INSERT INTO shipments (task_id, invoice_no, tracking_number, courier, status, last_location, timestamp, last_sync)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (task_id, "-", awb, courier, "Pending", "Awaiting scan", "-", "-"))
+    conn.commit()
+    conn.close()
+    
+    # Track immediately
+    try:
+        result = await scraper.track(awb)
+        status = result["status"]
+        last_location = result["last_location"]
+        timestamp = result["timestamp"]
+    except Exception as e:
+        status = "Scrape Error"
+        last_location = f"Error: {str(e)}"
+        timestamp = "-"
+        
+    from datetime import datetime
+    last_sync_str = datetime.now().strftime("%d-%m-%Y %I:%M:%S %p")
+    
+    # Update shipment status
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+    UPDATE shipments 
+    SET status = ?, last_location = ?, timestamp = ?, last_sync = ?
+    WHERE task_id = ? AND tracking_number = ?
+    """, (status, last_location, timestamp, last_sync_str, task_id, awb))
+    
+    # Recalculate task stats
+    cursor.execute("SELECT status FROM shipments WHERE task_id = ?", (task_id,))
+    rows = cursor.fetchall()
+    
+    # Simple mapping function inside endpoint for stats
+    def simple_map_status(st):
+        st_lower = st.lower()
+        if "delivered" in st_lower: return "delivered"
+        if any(k in st_lower for k in ["transit", "picked", "pickup", "dispatched", "shipped", "route", "out", "delivery", "schedule"]): return "transit"
+        if any(k in st_lower for k in ["fail", "except", "error", "invalid", "return", "cancel", "undelivered"]): return "failed"
+        return "pending"
+        
+    total = len(rows)
+    delivered = sum(1 for r in rows if simple_map_status(r[0]) == "delivered")
+    transit = sum(1 for r in rows if simple_map_status(r[0]) == "transit")
+    failed = sum(1 for r in rows if simple_map_status(r[0]) == "failed")
+    
+    # API calls tracking
+    today_date = datetime.now().strftime("%Y-%m-%d")
+    cursor.execute("SELECT hits FROM api_hits WHERE hit_date = ?", (today_date,))
+    hit_row = cursor.fetchone()
+    today_api_calls = (hit_row[0] + 1) if hit_row else 1
+    if hit_row:
+        cursor.execute("UPDATE api_hits SET hits = hits + 1 WHERE hit_date = ?", (today_date,))
+    else:
+        cursor.execute("INSERT INTO api_hits (hit_date, hits) VALUES (?, 1)", (today_date,))
+        
+    conn.commit()
+    conn.close()
+    
+    # Retrieve updated shipments list
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT invoice_no, tracking_number, courier, status, last_location, timestamp, last_sync FROM shipments WHERE task_id = ?", (task_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    
+    shipments = []
+    for r in rows:
+        shipments.append({
+            "invoice_no": r[0],
+            "tracking_number": r[1],
+            "courier": r[2],
+            "status": r[3],
+            "last_location": r[4],
+            "timestamp": r[5],
+            "last_sync": r[6] or "-"
+        })
+        
+    stats = {
+        "total": total,
+        "delivered": delivered,
+        "transit": transit,
+        "failed": failed,
+        "api_calls": today_api_calls
+    }
+    
+    return {"task_id": task_id, "shipments": shipments, "stats": stats}
+
 @app.post('/api/track/start')
 async def start_tracking(body: StartTrackRequest, background_tasks: BackgroundTasks):
     task_id = body.task_id

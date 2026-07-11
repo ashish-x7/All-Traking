@@ -612,6 +612,72 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- Quick Track Single AWB Handler ---
+    const quickAwbInput = document.getElementById('quick-awb-input');
+    const quickCourierSelect = document.getElementById('quick-courier-select');
+    const quickTrackBtn = document.getElementById('quick-track-btn');
+
+    quickTrackBtn.addEventListener('click', async () => {
+        const awb = quickAwbInput.value.trim();
+        const courier = quickCourierSelect.value;
+
+        if (!awb) {
+            alert('Please enter an AWB number.');
+            return;
+        }
+        if (!courier) {
+            alert('Please select a courier partner.');
+            return;
+        }
+
+        const originalBtnHtml = quickTrackBtn.innerHTML;
+        quickTrackBtn.innerHTML = `<img src="/static/loading.gif" alt="Syncing" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 6px;"> Syncing...`;
+        quickTrackBtn.disabled = true;
+
+        try {
+            const res = await fetch('/api/track/add_single', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    task_id: state.taskId,
+                    tracking_number: awb,
+                    courier: courier
+                })
+            });
+
+            if (!res.ok) {
+                const errData = await res.json();
+                throw new Error(errData.detail || 'Failed to add and track AWB');
+            }
+
+            const data = await res.json();
+
+            // Update application state
+            state.taskId = data.task_id;
+            state.shipments = data.shipments;
+            state.stats = data.stats;
+
+            // Enable buttons
+            exportBtn.disabled = false;
+            clearAllBtn.disabled = false;
+            startTrackingBtn.disabled = false;
+
+            // Clear inputs
+            quickAwbInput.value = '';
+            quickCourierSelect.value = '';
+
+            // Apply filters and render
+            applyFilters();
+            recalculateStats();
+
+        } catch (error) {
+            alert(`Error: ${error.message}`);
+        } finally {
+            quickTrackBtn.innerHTML = originalBtnHtml;
+            quickTrackBtn.disabled = false;
+        }
+    });
+
     // Load saved data on page load
     loadLatestData();
 });
