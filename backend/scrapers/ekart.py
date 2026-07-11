@@ -4,13 +4,25 @@ import re
 
 class EkartScraper(BaseScraper):
     async def track(self, awb: str) -> dict:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-            )
-            url = f"https://www.ekartlogistics.com/ekartlogistics-web/shipmenttrack/{awb}"
+        from browser.playwright_manager import playwright_manager
+        url = f"https://www.ekartlogistics.com/ekartlogistics-web/shipmenttrack/{awb}"
+        max_attempts = 2
+        
+        for attempt in range(1, max_attempts + 1):
+            page = None
             try:
+                page = await playwright_manager.new_page(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                )
+                
+                # Intercept and block heavy assets to save memory/CPU on low-end servers
+                async def intercept_route(route):
+                    if route.request.resource_type in ["image", "media", "font", "stylesheet"]:
+                        await route.abort()
+                    else:
+                        await route.continue_()
+                await page.route("**/*", intercept_route)
+                
                 # Go to the url and wait until no more network activity
                 await page.goto(url, wait_until="networkidle")
                 
@@ -59,11 +71,18 @@ class EkartScraper(BaseScraper):
                 }
                 
             except Exception as e:
+                if attempt < max_attempts:
+                    await asyncio.sleep(1)
+                    continue
                 return {
                     "status": "Scrape Error",
                     "last_location": f"Error: {str(e)}",
                     "timestamp": "-"
                 }
             finally:
-                await browser.close()
+                if page:
+                    try:
+                        await page.close()
+                    except:
+                        pass
 
