@@ -100,8 +100,8 @@ class BlueDartScraper(BaseScraper):
                             "timestamp": "-"
                         }
                     return {
-                        "status": "Invalid AWB",
-                        "last_location": "No record found on Blue Dart",
+                        "status": "",
+                        "last_location": "",
                         "timestamp": "-"
                     }
                 

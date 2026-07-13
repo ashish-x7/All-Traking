@@ -100,8 +100,8 @@ class ShadowfaxScraper(BaseScraper):
                             "timestamp": "-"
                         }
                     return {
-                        "status": "Invalid AWB",
-                        "last_location": "No record found on Shadowfax",
+                        "status": "",
+                        "last_location": "",
                         "timestamp": "-"
                     }
                 

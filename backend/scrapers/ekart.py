@@ -31,8 +31,8 @@ class EkartScraper(BaseScraper):
                 
                 if "No tracking data available" in text:
                     return {
-                        "status": "Invalid AWB",
-                        "last_location": "No record found on Ekart",
+                        "status": "",
+                        "last_location": "",
                         "timestamp": "-"
                     }
                 

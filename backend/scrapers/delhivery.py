@@ -26,8 +26,8 @@ class DelhiveryScraper(BaseScraper):
             res_json = await asyncio.to_thread(fetch_delhivery, awb)
             if not res_json.get("data"):
                 return {
-                    "status": "Invalid AWB",
-                    "last_location": "No record found on Delhivery",
+                    "status": "",
+                    "last_location": "",
                     "timestamp": "-"
                 }
             
@@ -36,8 +36,14 @@ class DelhiveryScraper(BaseScraper):
             # Map status
             hq_status = data.get("hqStatus", "Unknown")
             status_obj = data.get("status", {})
-            instructions = status_obj.get("instructions", hq_status)
-            status = instructions if instructions else hq_status
+            instructions = status_obj.get("instructions")
+            
+            if data.get("currentFlow") == "Returned" or status_obj.get("status") == "DELIVERED_SELLER":
+                status = "Returned"
+            elif status_obj.get("status") == "DELIVERED" or hq_status == "DELIVERED":
+                status = "Delivered"
+            else:
+                status = instructions if instructions else hq_status
             
             # Parse timestamp from statusDateTime
             timestamp = "-"
@@ -56,14 +62,16 @@ class DelhiveryScraper(BaseScraper):
                     timestamp = v1_label.split("on ")[-1].strip()
             
             # Parse last location
-            last_location = "Delhivery Network"
+            last_location = ""
             scans = []
-            for state in data.get("trackingStates", []):
-                for scan in state.get("scans", []):
+            for state in (data.get("trackingStates") or []):
+                for scan in (state.get("scans") or []):
                     scans.append(scan)
             
             if scans:
-                latest_scan = scans[0]
+                # The trackingStates are ordered chronologically (oldest to newest),
+                # so the latest scan is the last element in the list.
+                latest_scan = scans[-1]
                 scanned_loc = latest_scan.get("scannedLocation") or latest_scan.get("cityLocation")
                 if scanned_loc:
                     last_location = scanned_loc

@@ -100,8 +100,8 @@ class XpressBeesScraper(BaseScraper):
                             "timestamp": "-"
                         }
                     return {
-                        "status": "Invalid AWB",
-                        "last_location": "No record found on Xpressbees",
+                        "status": "",
+                        "last_location": "",
                         "timestamp": "-"
                     }
                 
