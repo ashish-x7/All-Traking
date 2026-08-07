@@ -39,6 +39,7 @@ class TrackingService:
                     shipment["last_location"] = result["last_location"]
                     shipment["timestamp"] = result["timestamp"]
                     shipment["last_sync"] = last_sync_str
+                    shipment["screenshot"] = result.get("screenshot", "-")
                     
                     log_level = "success" if "delivered" in result["status"].lower() else "info"
                     if "error" in result["status"].lower() or "invalid" in result["status"].lower():

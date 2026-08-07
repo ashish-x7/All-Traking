@@ -15,12 +15,37 @@ class EkartScraper(BaseScraper):
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                 )
                 
-                # Intercept and block heavy assets to save memory/CPU on low-end servers
+                # Intercept to block ads/trackers but allow stylesheets & first-party images for nice screenshots
                 async def intercept_route(route):
-                    if route.request.resource_type in ["image", "media", "font", "stylesheet"]:
+                    req = route.request
+                    res_type = req.resource_type
+                    url_lower = req.url.lower()
+                    
+                    # Allow stylesheets so the screenshot layout is styled correctly.
+                    # Block media and fonts to save bandwidth.
+                    if res_type in ["media", "font"]:
                         await route.abort()
-                    else:
-                        await route.continue_()
+                        return
+                        
+                    # Only block images if they are ads/third-party
+                    if res_type == "image":
+                        if "ekartlogistics.com" in url_lower:
+                            await route.continue_()
+                            return
+                        else:
+                            await route.abort()
+                            return
+                    
+                    # Block trackers and ads
+                    ignored_domains = [
+                        "google", "analytics", "doubleclick", "adsense", 
+                        "facebook", "fundingchoices", "gstatic", "amazon-adsystem"
+                    ]
+                    if any(kw in url_lower for kw in ignored_domains):
+                        await route.abort()
+                        return
+                        
+                    await route.continue_()
                 await page.route("**/*", intercept_route)
                 
                 # Go to the url and wait until no more network activity
@@ -31,8 +56,8 @@ class EkartScraper(BaseScraper):
                 
                 if "No tracking data available" in text:
                     return {
-                        "status": "Invalid AWB",
-                        "last_location": "No record found on Ekart",
+                        "status": "",
+                        "last_location": "",
                         "timestamp": "-"
                     }
                 
@@ -64,10 +89,29 @@ class EkartScraper(BaseScraper):
                             if status == "Unknown":
                                 status = status_detail
                 
+                # Take screenshot of the tracking card/table container
+                screenshot_path = f"/static/screenshots/{awb}.png"
+                try:
+                    import os
+                    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    screenshot_file = os.path.join(backend_dir, "static", "screenshots", f"{awb}.png")
+                    os.makedirs(os.path.dirname(screenshot_file), exist_ok=True)
+                    
+                    # Try to capture the main tracking panel if present
+                    panel = page.locator(".tracking-panel, .card, .container").first
+                    if await panel.count() > 0:
+                        await panel.screenshot(path=screenshot_file)
+                    else:
+                        await page.screenshot(path=screenshot_file)
+                except Exception as screenshot_err:
+                    print(f"Failed to capture Ekart screenshot for {awb}: {screenshot_err}")
+                    screenshot_path = "-"
+
                 return {
                     "status": status,
                     "last_location": last_location,
-                    "timestamp": timestamp
+                    "timestamp": timestamp,
+                    "screenshot": screenshot_path
                 }
                 
             except Exception as e:

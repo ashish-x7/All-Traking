@@ -18,19 +18,34 @@ class ShadowfaxScraper(BaseScraper):
                 # Bypass headless webdriver detection to resolve Proof of Work / Anti-bot blocks
                 await page.add_init_script("delete navigator.__proto__.webdriver;")
                 
-                # Intercept and block ads, stylesheets, fonts, images, and trackers to save memory/CPU and speed up load times
+                # Intercept to block ads/trackers but allow stylesheets & first-party images for nice screenshots
                 async def intercept_route(route):
                     req = route.request
                     res_type = req.resource_type
                     url_lower = req.url.lower()
                     
-                    # Block assets we don't need for data parsing
-                    if res_type in ["image", "media", "font", "stylesheet"]:
+                    # Allow stylesheets so the screenshot layout is styled correctly.
+                    # Block media and fonts to save bandwidth.
+                    if res_type in ["media", "font"]:
                         await route.abort()
                         return
+                        
+                    # Only block images if they are ads/third-party
+                    if res_type == "image":
+                        # Allow images from trackcourier.io domain (logos, etc.)
+                        if "trackcourier.io" in url_lower:
+                            await route.continue_()
+                            return
+                        else:
+                            await route.abort()
+                            return
                     
                     # Block trackers and ads
-                    ignored_domains = ["google", "analytics", "doubleclick", "adsense", "facebook", "fundingchoices", "gstatic"]
+                    ignored_domains = [
+                        "google", "analytics", "doubleclick", "adsense", 
+                        "facebook", "fundingchoices", "gstatic", "amazon-adsystem", 
+                        "adnxs", "criteo", "pubmatic", "rubiconproject"
+                    ]
                     if any(kw in url_lower for kw in ignored_domains):
                         await route.abort()
                         return
@@ -64,13 +79,23 @@ class ShadowfaxScraper(BaseScraper):
                             continue;
                         }
                         
-                        const timeEl = item.querySelector('.checkpoint__time strong');
+                        const timeEl = item.querySelector('.checkpoint__time');
+                        const dateEl = item.querySelector('.checkpoint__time strong');
+                        const hourEl = item.querySelector('.checkpoint__time .hint');
+                        let timeText = '';
+                        if (dateEl && hourEl) {
+                            timeText = dateEl.innerText.trim() + ' ' + hourEl.innerText.trim();
+                        } else if (dateEl) {
+                            timeText = dateEl.innerText.trim();
+                        } else if (timeEl) {
+                            timeText = timeEl.innerText.trim();
+                        }
                         const activityEl = item.querySelector('.checkpoint__content strong span:not(.checkpoint__courier-name)');
                         const locationEl = item.querySelector('.checkpoint__content .hint');
                         
-                        if (timeEl && activityEl) {
+                        if (timeText && activityEl) {
                             checkpoints.push({
-                                time: timeEl.innerText.trim(),
+                                time: timeText,
                                 activity: activityEl.innerText.trim(),
                                 location: locationEl ? locationEl.innerText.trim() : ''
                             });
@@ -100,8 +125,8 @@ class ShadowfaxScraper(BaseScraper):
                             "timestamp": "-"
                         }
                     return {
-                        "status": "Invalid AWB",
-                        "last_location": "No record found on Shadowfax",
+                        "status": "",
+                        "last_location": "",
                         "timestamp": "-"
                     }
                 
@@ -111,13 +136,33 @@ class ShadowfaxScraper(BaseScraper):
                 last_location = "Awaiting scan"
                 timestamp = "-"
                 
-                if additional_info:
-                    status = additional_info
-                    if ":" in additional_info:
-                        status = additional_info.split(":")[0].strip()
-                
                 if checkpoints:
-                    latest_cp = checkpoints[0]
+                    import re
+                    from datetime import datetime
+                    
+                    def parse_checkpoint_time(time_str: str) -> datetime:
+                        time_str = re.sub(r'\s+', ' ', time_str.strip())
+                        if not time_str:
+                            return datetime.min
+                        formats = [
+                            "%d-%b-%Y %H:%M:%S",
+                            "%d-%b-%Y %H:%M",
+                            "%d-%b-%Y %I:%M %p",
+                            "%d-%b-%Y",
+                            "%Y-%m-%d %H:%M:%S",
+                            "%Y-%m-%d",
+                        ]
+                        for fmt in formats:
+                            try:
+                                return datetime.strptime(time_str, fmt)
+                            except ValueError:
+                                pass
+                        return datetime.min
+                    
+                    # Sort checkpoints oldest to newest
+                    checkpoints.sort(key=lambda cp: parse_checkpoint_time(cp.get("time", "")))
+                    
+                    latest_cp = checkpoints[-1]
                     timestamp = latest_cp.get("time", "-")
                     loc = latest_cp.get("location", "")
                     act = latest_cp.get("activity", "")
@@ -129,13 +174,52 @@ class ShadowfaxScraper(BaseScraper):
                     elif loc:
                         last_location = loc
                         
-                    if status == "Unknown" and act:
+                    if act:
                         status = act
+                
+                if (status == "Unknown" or not status) and additional_info:
+                    status = additional_info
+                    if ":" in additional_info:
+                        status = additional_info.split(":")[0].strip()
                         
+                # Normalize status for app.py compatibility
+                status_lower = status.lower()
+                if "delivered" in status_lower:
+                    status = "Delivered"
+                elif "out for delivery" in status_lower:
+                    status = "Out for Delivery"
+                elif "in transit" in status_lower or "transit" in status_lower:
+                    status = "In Transit"
+                elif "picked up" in status_lower:
+                    status = "Picked Up"
+                elif "out for pickup" in status_lower or "out for pick up" in status_lower:
+                    status = "Out for Pickup"
+                elif "failed" in status_lower or "undelivered" in status_lower or "unable to deliver" in status_lower:
+                    status = "Failed"
+                    
+                # Take screenshot of the tracking details block
+                screenshot_path = f"/static/screenshots/{awb}.png"
+                try:
+                    import os
+                    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    screenshot_file = os.path.join(backend_dir, "static", "screenshots", f"{awb}.png")
+                    os.makedirs(os.path.dirname(screenshot_file), exist_ok=True)
+                    
+                    # Try to capture the specific tracking card container (.block.m-b-2)
+                    card = page.locator(".block.m-b-2").first
+                    if await card.count() > 0:
+                        await card.screenshot(path=screenshot_file)
+                    else:
+                        await page.screenshot(path=screenshot_file)
+                except Exception as screenshot_err:
+                    print(f"Failed to capture Shadowfax screenshot for {awb}: {screenshot_err}")
+                    screenshot_path = "-"
+
                 return {
                     "status": status,
                     "last_location": last_location,
-                    "timestamp": timestamp
+                    "timestamp": timestamp,
+                    "screenshot": screenshot_path
                 }
                 
             except Exception as e:

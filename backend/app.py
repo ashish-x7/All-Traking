@@ -14,7 +14,7 @@ import pandas as pd
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,6 +35,7 @@ app.add_middleware(
 # Ensure folders exist
 os.makedirs("uploads", exist_ok=True)
 os.makedirs("outputs", exist_ok=True)
+os.makedirs("static/screenshots", exist_ok=True)
 
 # Mount static folder
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -67,6 +68,7 @@ def init_db():
         last_location TEXT,
         timestamp TEXT,
         last_sync TEXT,
+        screenshot TEXT,
         FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
     );
     """)
@@ -78,6 +80,11 @@ def init_db():
     # Migration step to add invoice_no if table already exists
     try:
         cursor.execute("ALTER TABLE shipments ADD COLUMN invoice_no TEXT;")
+    except sqlite3.OperationalError:
+        pass
+    # Migration step to add screenshot if table already exists
+    try:
+        cursor.execute("ALTER TABLE shipments ADD COLUMN screenshot TEXT;")
     except sqlite3.OperationalError:
         pass
     # Create logs table
@@ -188,7 +195,8 @@ async def upload_file(file: UploadFile = File(...)):
                             "status": "Pending",
                             "last_location": "Awaiting scan",
                             "timestamp": "-",
-                            "last_sync": "-"
+                            "last_sync": "-",
+                            "screenshot": "-"
                         })
         else:
             df = pd.read_excel(io.BytesIO(contents), dtype=str)
@@ -208,7 +216,8 @@ async def upload_file(file: UploadFile = File(...)):
                         "status": "Pending",
                         "last_location": "Awaiting scan",
                         "timestamp": "-",
-                        "last_sync": "-"
+                        "last_sync": "-",
+                        "screenshot": "-"
                         })
 
     except Exception as e:
@@ -226,9 +235,9 @@ async def upload_file(file: UploadFile = File(...)):
     
     for s in shipments:
         cursor.execute("""
-        INSERT INTO shipments (task_id, invoice_no, tracking_number, courier, status, last_location, timestamp, last_sync)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (task_id, s.get("invoice_no", ""), s["tracking_number"], s["courier"], s["status"], s["last_location"], s["timestamp"], "-"))
+        INSERT INTO shipments (task_id, invoice_no, tracking_number, courier, status, last_location, timestamp, last_sync, screenshot)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (task_id, s.get("invoice_no", ""), s["tracking_number"], s["courier"], s["status"], s["last_location"], s["timestamp"], "-", "-"))
         
     cursor.execute("INSERT INTO logs (task_id, message, level) VALUES (?, ?, ?)", (task_id, f"Successfully parsed {filename}. Found {len(shipments)} records.", "success"))
     cursor.execute("INSERT INTO logs (task_id, message, level) VALUES (?, ?, ?)", (task_id, "Ready to begin courier web scraping simulation.", "info"))
@@ -261,7 +270,7 @@ async def run_tracking_simulation(task_id: str):
     # Retrieve shipments from database
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT tracking_number, courier, status, last_location, timestamp, last_sync FROM shipments WHERE task_id = ?", (task_id,))
+    cursor.execute("SELECT tracking_number, courier, status, last_location, timestamp, last_sync, screenshot FROM shipments WHERE task_id = ?", (task_id,))
     rows = cursor.fetchall()
     conn.close()
     
@@ -273,7 +282,8 @@ async def run_tracking_simulation(task_id: str):
             "status": r[2],
             "last_location": r[3],
             "timestamp": r[4],
-            "last_sync": r[5] or "-"
+            "last_sync": r[5] or "-",
+            "screenshot": r[6] or "-"
         })
         
     # Set status to running
@@ -292,9 +302,9 @@ async def run_tracking_simulation(task_id: str):
         for s in shipments:
             cursor.execute("""
             UPDATE shipments 
-            SET status = ?, last_location = ?, timestamp = ?, last_sync = ? 
+            SET status = ?, last_location = ?, timestamp = ?, last_sync = ?, screenshot = ? 
             WHERE task_id = ? AND tracking_number = ?
-            """, (s["status"], s["last_location"], s["timestamp"], s.get("last_sync", "-"), task_id, s["tracking_number"]))
+            """, (s["status"], s["last_location"], s["timestamp"], s.get("last_sync", "-"), s.get("screenshot", "-"), task_id, s["tracking_number"]))
             
         cursor.execute("INSERT INTO logs (task_id, message, level) VALUES (?, ?, ?)", (task_id, log_message, log_level))
         conn.commit()
@@ -337,10 +347,12 @@ async def query_single_shipment(body: QuerySingleRequest):
         status = result["status"]
         last_location = result["last_location"]
         timestamp = result["timestamp"]
+        screenshot = result.get("screenshot", "-")
     except Exception as e:
         status = "Scrape Error"
         last_location = f"Error: {str(e)}"
         timestamp = "-"
+        screenshot = "-"
         
     # API calls tracking
     conn = sqlite3.connect(DB_PATH)
@@ -357,6 +369,7 @@ async def query_single_shipment(body: QuerySingleRequest):
         "status": status,
         "last_location": last_location,
         "timestamp": timestamp,
+        "screenshot": screenshot,
         "api_calls": today_api_calls
     }
 
@@ -399,9 +412,9 @@ async def sync_single_shipment(body: SyncSingleRequest):
         cursor.execute("INSERT INTO api_usage DEFAULT VALUES;")
         cursor.execute("""
         UPDATE shipments 
-        SET status = ?, last_location = ?, timestamp = ?, last_sync = ? 
+        SET status = ?, last_location = ?, timestamp = ?, last_sync = ?, screenshot = ? 
         WHERE task_id = ? AND tracking_number = ?
-        """, (result.get("status"), result.get("last_location"), result.get("timestamp"), last_sync_str, task_id, awb))
+        """, (result.get("status"), result.get("last_location"), result.get("timestamp"), last_sync_str, result.get("screenshot", "-"), task_id, awb))
         
         # Log the manual update
         cursor.execute("""
@@ -421,6 +434,7 @@ async def sync_single_shipment(body: SyncSingleRequest):
             "last_location": result.get("last_location"),
             "timestamp": result.get("timestamp"),
             "last_sync": last_sync_str,
+            "screenshot": result.get("screenshot", "-"),
             "api_calls": today_api_calls
         }
     except Exception as e:
@@ -440,7 +454,7 @@ async def get_progress(task_id: str):
     status, progress, current_action = task_row
     
     # Get shipments
-    cursor.execute("SELECT invoice_no, tracking_number, courier, status, last_location, timestamp, last_sync FROM shipments WHERE task_id = ?", (task_id,))
+    cursor.execute("SELECT invoice_no, tracking_number, courier, status, last_location, timestamp, last_sync, screenshot FROM shipments WHERE task_id = ?", (task_id,))
     shipment_rows = cursor.fetchall()
     shipments = []
     for r in shipment_rows:
@@ -451,7 +465,8 @@ async def get_progress(task_id: str):
             "status": r[3],
             "last_location": r[4],
             "timestamp": r[5],
-            "last_sync": r[6] or "-"
+            "last_sync": r[6] or "-",
+            "screenshot": r[7] or "-"
         })
         
     # Get logs
@@ -493,10 +508,10 @@ async def get_progress(task_id: str):
 
 
 @app.get('/api/export')
-async def export_results(task_id: str):
+async def export_results(task_id: str, request: Request):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT invoice_no, tracking_number, courier, status, last_location, timestamp, last_sync FROM shipments WHERE task_id = ?", (task_id,))
+    cursor.execute("SELECT invoice_no, tracking_number, courier, status, last_location, timestamp, last_sync, screenshot FROM shipments WHERE task_id = ?", (task_id,))
     shipment_rows = cursor.fetchall()
     conn.close()
     
@@ -512,7 +527,7 @@ async def export_results(task_id: str):
     ws.title = "Tracking Results"
 
     # Define headers
-    headers = ["Invoice No.", "AWB No.", "Courier Partner", "Status", "Last Location", "Timestamp", "Last Sync"]
+    headers = ["Invoice No.", "AWB No.", "Courier Partner", "Status", "Last Location", "Timestamp", "Last Sync", "Screenshot"]
     ws.append(headers)
 
     # Set Header styling (bold, light gray background, center align)
@@ -560,6 +575,21 @@ async def export_results(task_id: str):
                 cell.alignment = Alignment(horizontal="center")
             else:
                 cell.alignment = Alignment(horizontal="left")
+                
+        # Write Screenshot hyperlink column (col_idx = 8)
+        screenshot_path = r[7]
+        cell = ws.cell(row=row_num, column=8)
+        if screenshot_path and screenshot_path != "-":
+            # Construct absolute URL
+            base_url_str = str(request.base_url).rstrip('/')
+            screenshot_url = f"{base_url_str}{screenshot_path}"
+            cell.value = "Link"
+            cell.hyperlink = screenshot_url
+            cell.font = Font(name="Segoe UI", size=11, color="0000FF", underline="single")
+        else:
+            cell.value = "-"
+            cell.font = row_font
+        cell.alignment = Alignment(horizontal="center")
 
     # Auto-adjust column widths
     for col in ws.columns:
@@ -600,7 +630,7 @@ async def get_latest_task():
     task_id = task_row[0]
 
     # Get shipments
-    cursor.execute("SELECT invoice_no, tracking_number, courier, status, last_location, timestamp, last_sync FROM shipments WHERE task_id = ?", (task_id,))
+    cursor.execute("SELECT invoice_no, tracking_number, courier, status, last_location, timestamp, last_sync, screenshot FROM shipments WHERE task_id = ?", (task_id,))
     shipment_rows = cursor.fetchall()
     shipments = []
     for r in shipment_rows:
@@ -611,7 +641,8 @@ async def get_latest_task():
             "status": r[3],
             "last_location": r[4],
             "timestamp": r[5],
-            "last_sync": r[6] or "-"
+            "last_sync": r[6] or "-",
+            "screenshot": r[7] or "-"
         })
 
     # Get today's API calls count

@@ -46,7 +46,8 @@ document.addEventListener('DOMContentLoaded', () => {
         filteredShipments: [], // Screen filtered list
         stats: { total: 0, delivered: 0, transit: 0, failed: 0, api_calls: 0 },
         currentPage: 1,
-        rowsPerPage: 50
+        rowsPerPage: 50,
+        activeColumnFilters: {} // Excel column filter tracking
     };
 
     // --- Drag and Drop File Handlers ---
@@ -305,6 +306,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 state.shipments[idx].last_location = data.last_location;
                 state.shipments[idx].timestamp = data.timestamp;
                 state.shipments[idx].last_sync = data.last_sync || "-";
+                state.shipments[idx].screenshot = data.screenshot || "-";
             }
 
             // Render and update stats
@@ -344,7 +346,43 @@ document.addEventListener('DOMContentLoaded', () => {
             const matchesCourier = courier === 'all' || item.courier.toLowerCase() === courier.toLowerCase();
             const matchesStatus = status === 'all' || mapStatusFilter(item.status) === status;
 
-            return matchesQuery && matchesCourier && matchesStatus;
+            // Excel Column Filters
+            let matchesColumnFilters = true;
+            for (const [col, selectedVals] of Object.entries(state.activeColumnFilters)) {
+                if (selectedVals && selectedVals.length > 0) {
+                    let itemVal = item[col] || '';
+                    if (col === 'screenshot') {
+                        itemVal = (item.screenshot && item.screenshot !== '-') ? 'Has Screenshot' : 'No Screenshot';
+                    } else if (col === 'invoice_no') {
+                        itemVal = itemVal || '-';
+                    } else if (col === 'last_location') {
+                        itemVal = itemVal || 'Pending scan';
+                    } else if (col === 'timestamp' || col === 'last_sync') {
+                        itemVal = itemVal || '-';
+                    }
+                    
+                    if (!selectedVals.includes(String(itemVal))) {
+                        matchesColumnFilters = false;
+                        break;
+                    }
+                }
+            }
+
+            return matchesQuery && matchesCourier && matchesStatus && matchesColumnFilters;
+        });
+
+        // Highlight header buttons that have active filters
+        document.querySelectorAll('.header-filter-btn').forEach(btn => {
+            const th = btn.closest('th');
+            if (th) {
+                const colKey = th.getAttribute('data-col');
+                const active = state.activeColumnFilters[colKey] && state.activeColumnFilters[colKey].length > 0;
+                if (active) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            }
         });
 
         if (resetPage) {
@@ -504,7 +542,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (dataList.length === 0) {
             tableBody.innerHTML = `
                 <tr class="empty-row">
-                    <td colspan="8">
+                    <td colspan="9">
                         <div class="empty-state">
                             <i data-lucide="file-warning"></i>
                             <p>No matching shipments found.</p>
@@ -542,6 +580,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // Spin single sync button if bulk tracking is in progress and this item is still pending
             const isSpinning = state.isTracking && item.status.toLowerCase() === 'pending';
 
+            // Determine screenshot column markup
+            const hasScreenshot = item.screenshot && item.screenshot !== '-';
+            const screenshotHtml = hasScreenshot ? 
+                `<a href="${item.screenshot}" download target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 500;">Link</a>` : 
+                `-`;
+
             tr.innerHTML = `
                 <td><span style="color:${rowTextColor}">${item.invoice_no || '-'}</span></td>
                 <td><span class="awb-badge" style="color:${rowTextColor}">${item.tracking_number}</span></td>
@@ -550,6 +594,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td><span class="location-badge" style="color:${rowTextColor}">${item.last_location || 'Pending scan'}</span></td>
                 <td><span class="timestamp-badge ${timestampBadgeClass}" style="color:${isTimestampEmpty ? '' : rowTextColor}">${printTimestamp}</span></td>
                 <td><span class="lastsync-badge ${lastSyncBadgeClass}" style="color:${isLastSyncEmpty ? '' : rowTextColor}">${printLastSync}</span></td>
+                <td style="text-align: center;">${screenshotHtml}</td>
                 <td style="text-align: center;">
                     <button class="btn-sync-single" title="Sync Status" style="color:${rowTextColor}" ${isSpinning ? 'disabled' : ''}>
                         ${isSpinning ? 
@@ -707,6 +752,173 @@ document.addEventListener('DOMContentLoaded', () => {
             closeResultModal();
         }
     });
+
+    // Floating Excel-like Dropdown logic
+    let activeDropdown = null;
+
+    document.addEventListener('click', (e) => {
+        if (activeDropdown && !activeDropdown.contains(e.target) && !e.target.closest('.header-filter-btn')) {
+            closeActiveDropdown();
+        }
+    });
+
+    function closeActiveDropdown() {
+        if (activeDropdown) {
+            activeDropdown.remove();
+            activeDropdown = null;
+        }
+    }
+
+    // Setup Column Header Filter Triggers
+    document.querySelectorAll('.header-filter-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const th = btn.closest('th');
+            const colKey = th.getAttribute('data-col');
+            
+            if (activeDropdown && activeDropdown.getAttribute('data-col') === colKey) {
+                closeActiveDropdown();
+                return;
+            }
+            
+            closeActiveDropdown();
+            openFilterDropdown(btn, colKey);
+        });
+    });
+
+    function openFilterDropdown(btn, colKey) {
+        // Get all distinct values of this column from state.shipments
+        let allValues = state.shipments.map(item => {
+            let val = item[colKey] || '';
+            if (colKey === 'screenshot') {
+                return (item.screenshot && item.screenshot !== '-') ? 'Has Screenshot' : 'No Screenshot';
+            } else if (colKey === 'invoice_no') {
+                return val || '-';
+            } else if (colKey === 'last_location') {
+                return val || 'Pending scan';
+            } else if (colKey === 'timestamp' || colKey === 'last_sync') {
+                return val || '-';
+            }
+            return String(val).trim();
+        });
+        
+        // Remove duplicates and sort
+        let uniqueValues = [...new Set(allValues)].filter(v => v !== '').sort((a, b) => {
+            if (a === '-' || a === 'Pending scan') return 1;
+            if (b === '-' || b === 'Pending scan') return -1;
+            return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+        });
+        
+        // If no data
+        if (uniqueValues.length === 0) {
+            uniqueValues = ['No data'];
+        }
+        
+        const activeSelections = state.activeColumnFilters[colKey] || [];
+        
+        const dropdown = document.createElement('div');
+        dropdown.className = 'excel-filter-dropdown';
+        dropdown.setAttribute('data-col', colKey);
+        
+        let dropdownHtml = `
+            <div class="excel-filter-search-container">
+                <input type="text" class="excel-filter-search" placeholder="Search values...">
+            </div>
+            <div class="excel-filter-list">
+                <label class="excel-filter-item select-all-item">
+                    <input type="checkbox" id="filter-select-all" ${activeSelections.length === 0 || activeSelections.length === uniqueValues.length ? 'checked' : ''}>
+                    <span class="excel-filter-item-label" style="font-weight: 600;">(Select All)</span>
+                </label>
+        `;
+        
+        uniqueValues.forEach(val => {
+            const isChecked = activeSelections.length === 0 || activeSelections.includes(val);
+            dropdownHtml += `
+                <label class="excel-filter-item val-item">
+                    <input type="checkbox" class="excel-filter-val-cb" value="${val}" ${isChecked ? 'checked' : ''}>
+                    <span class="excel-filter-item-label" title="${val}">${val}</span>
+                </label>
+            `;
+        });
+        
+        dropdownHtml += `
+            </div>
+            <div class="excel-filter-actions">
+                <button class="excel-filter-btn excel-filter-clear">Clear</button>
+                <button class="excel-filter-btn excel-filter-apply">OK</button>
+            </div>
+        `;
+        
+        dropdown.innerHTML = dropdownHtml;
+        document.body.appendChild(dropdown);
+        activeDropdown = dropdown;
+        
+        // Position dropdown
+        const btnRect = btn.getBoundingClientRect();
+        const dropdownWidth = 250;
+        let leftPos = btnRect.left + window.scrollX;
+        if (leftPos + dropdownWidth > window.innerWidth) {
+            leftPos = window.innerWidth - dropdownWidth - 10;
+        }
+        dropdown.style.top = `${btnRect.bottom + window.scrollY + 5}px`;
+        dropdown.style.left = `${leftPos}px`;
+        
+        const searchInput = dropdown.querySelector('.excel-filter-search');
+        const valItems = dropdown.querySelectorAll('.excel-filter-item.val-item');
+        const selectAllCb = dropdown.querySelector('#filter-select-all');
+        
+        searchInput.focus();
+        
+        searchInput.addEventListener('input', () => {
+            const query = searchInput.value.toLowerCase().trim();
+            valItems.forEach(item => {
+                const text = item.querySelector('.excel-filter-item-label').textContent.toLowerCase();
+                if (text.includes(query)) {
+                    item.style.display = 'flex';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        });
+        
+        selectAllCb.addEventListener('change', () => {
+            const isChecked = selectAllCb.checked;
+            valItems.forEach(item => {
+                if (item.style.display !== 'none') {
+                    item.querySelector('input').checked = isChecked;
+                }
+            });
+        });
+        
+        dropdown.querySelectorAll('.excel-filter-val-cb').forEach(cb => {
+            cb.addEventListener('change', () => {
+                const visibleCbs = Array.from(dropdown.querySelectorAll('.excel-filter-val-cb')).filter(c => c.closest('.excel-filter-item').style.display !== 'none');
+                const checkedVisible = visibleCbs.filter(c => c.checked);
+                selectAllCb.checked = (checkedVisible.length === visibleCbs.length);
+            });
+        });
+        
+        dropdown.querySelector('.excel-filter-apply').addEventListener('click', () => {
+            const checkedValues = Array.from(dropdown.querySelectorAll('.excel-filter-val-cb'))
+                .filter(cb => cb.checked)
+                .map(cb => cb.value);
+                
+            if (checkedValues.length === uniqueValues.length || checkedValues.length === 0) {
+                state.activeColumnFilters[colKey] = [];
+            } else {
+                state.activeColumnFilters[colKey] = checkedValues;
+            }
+            
+            closeActiveDropdown();
+            applyFilters(true);
+        });
+        
+        dropdown.querySelector('.excel-filter-clear').addEventListener('click', () => {
+            state.activeColumnFilters[colKey] = [];
+            closeActiveDropdown();
+            applyFilters(true);
+        });
+    }
 
     // Load saved data on page load
     loadLatestData();

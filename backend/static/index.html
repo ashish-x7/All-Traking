@@ -181,19 +181,60 @@
                     <table class="results-table" id="results-table">
                         <thead>
                             <tr>
-                                <th>Invoice No.</th>
-                                <th>AWB No.</th>
-                                <th>Courier Partner</th>
-                                <th>Status</th>
-                                <th>Last Location</th>
-                                <th>Timestamp</th>
-                                <th>Last Sync</th>
+                                <th data-col="invoice_no">
+                                    <div class="header-content">
+                                        <span>Invoice No.</span>
+                                        <button class="header-filter-btn" title="Filter"><i data-lucide="filter"></i></button>
+                                    </div>
+                                </th>
+                                <th data-col="tracking_number">
+                                    <div class="header-content">
+                                        <span>AWB No.</span>
+                                        <button class="header-filter-btn" title="Filter"><i data-lucide="filter"></i></button>
+                                    </div>
+                                </th>
+                                <th data-col="courier">
+                                    <div class="header-content">
+                                        <span>Courier Partner</span>
+                                        <button class="header-filter-btn" title="Filter"><i data-lucide="filter"></i></button>
+                                    </div>
+                                </th>
+                                <th data-col="status">
+                                    <div class="header-content">
+                                        <span>Status</span>
+                                        <button class="header-filter-btn" title="Filter"><i data-lucide="filter"></i></button>
+                                    </div>
+                                </th>
+                                <th data-col="last_location">
+                                    <div class="header-content">
+                                        <span>Last Location</span>
+                                        <button class="header-filter-btn" title="Filter"><i data-lucide="filter"></i></button>
+                                    </div>
+                                </th>
+                                <th data-col="timestamp">
+                                    <div class="header-content">
+                                        <span>Timestamp</span>
+                                        <button class="header-filter-btn" title="Filter"><i data-lucide="filter"></i></button>
+                                    </div>
+                                </th>
+                                <th data-col="last_sync">
+                                    <div class="header-content">
+                                        <span>Last Sync</span>
+                                        <button class="header-filter-btn" title="Filter"><i data-lucide="filter"></i></button>
+                                    </div>
+                                </th>
+                                <th data-col="screenshot">
+                                    <div class="header-content">
+                                        <span>Screenshot</span>
+                                        <button class="header-filter-btn" title="Filter"><i data-lucide="filter"></i></button>
+                                    </div>
+                                </th>
                                 <th style="width: 100px; text-align: center;">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="table-body">
                             <tr class="empty-row">
-                                <td colspan="8">
+                                <td colspan="9">
                                     <div class="empty-state">
                                         <i data-lucide="file-warning"></i>
                                         <p>No shipments tracked yet. Upload a sheet to get started.</p>
