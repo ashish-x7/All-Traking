@@ -199,6 +199,12 @@
                                         <button class="header-filter-btn" title="Filter"><i data-lucide="filter"></i></button>
                                     </div>
                                 </th>
+                                <th data-col="platform_status">
+                                    <div class="header-content">
+                                        <span>Platform Status</span>
+                                        <button class="header-filter-btn" title="Filter"><i data-lucide="filter"></i></button>
+                                    </div>
+                                </th>
                                 <th data-col="status">
                                     <div class="header-content">
                                         <span>Status</span>
@@ -234,7 +240,7 @@
                         </thead>
                         <tbody id="table-body">
                             <tr class="empty-row">
-                                <td colspan="9">
+                                <td colspan="10">
                                     <div class="empty-state">
                                         <i data-lucide="file-warning"></i>
                                         <p>No shipments tracked yet. Upload a sheet to get started.</p>
@@ -317,6 +323,16 @@
                 <div class="result-row">
                     <span class="result-label">Last Event Time:</span>
                     <span class="result-value" id="res-timestamp">-</span>
+                </div>
+                <div class="result-row">
+                    <span class="result-label">Screenshot:</span>
+                    <span id="res-screenshot">-</span>
+                </div>
+                <div class="result-row screenshot-preview-row" id="res-screenshot-preview-row" style="display: none; flex-direction: column; gap: 8px;">
+                    <span class="result-label">Screenshot Preview:</span>
+                    <div style="border: 1px solid var(--card-border); border-radius: var(--radius-md); overflow: hidden; background-color: #f8fafc; display: flex; align-items: center; justify-content: center; padding: 4px;">
+                        <img id="res-screenshot-img" src="" alt="Screenshot" style="max-width: 100%; max-height: 250px; object-fit: contain; border-radius: var(--radius-sm);">
+                    </div>
                 </div>
             </div>
             

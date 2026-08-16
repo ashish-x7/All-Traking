@@ -353,7 +353,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     let itemVal = item[col] || '';
                     if (col === 'screenshot') {
                         itemVal = (item.screenshot && item.screenshot !== '-') ? 'Has Screenshot' : 'No Screenshot';
-                    } else if (col === 'invoice_no') {
+                    } else if (col === 'invoice_no' || col === 'platform_status') {
                         itemVal = itemVal || '-';
                     } else if (col === 'last_location') {
                         itemVal = itemVal || 'Pending scan';
@@ -542,7 +542,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (dataList.length === 0) {
             tableBody.innerHTML = `
                 <tr class="empty-row">
-                    <td colspan="9">
+                    <td colspan="10">
                         <div class="empty-state">
                             <i data-lucide="file-warning"></i>
                             <p>No matching shipments found.</p>
@@ -590,6 +590,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td><span style="color:${rowTextColor}">${item.invoice_no || '-'}</span></td>
                 <td><span class="awb-badge" style="color:${rowTextColor}">${item.tracking_number}</span></td>
                 <td><span class="courier-badge ${getCourierBadgeClass(item.courier)}">${item.courier}</span></td>
+                <td><span style="color:${rowTextColor}">${item.platform_status || '-'}</span></td>
                 <td><span class="badge ${badgeClass}">${item.status}</span></td>
                 <td><span class="location-badge" style="color:${rowTextColor}">${item.last_location || 'Pending scan'}</span></td>
                 <td><span class="timestamp-badge ${timestampBadgeClass}" style="color:${isTimestampEmpty ? '' : rowTextColor}">${printTimestamp}</span></td>
@@ -723,6 +724,22 @@ document.addEventListener('DOMContentLoaded', () => {
             
             document.getElementById('res-location').textContent = data.last_location || 'Pending scan';
             document.getElementById('res-timestamp').textContent = data.timestamp || '-';
+            
+            // Populate screenshot and preview image if available
+            const resScreenshot = document.getElementById('res-screenshot');
+            const previewRow = document.getElementById('res-screenshot-preview-row');
+            const previewImg = document.getElementById('res-screenshot-img');
+            
+            const hasScreenshot = data.screenshot && data.screenshot !== '-';
+            if (hasScreenshot) {
+                resScreenshot.innerHTML = `<a href="${data.screenshot}" download target="_blank" style="color: #2563eb; text-decoration: underline; font-weight: 500;">Link</a>`;
+                previewImg.src = data.screenshot;
+                previewRow.style.display = 'flex';
+            } else {
+                resScreenshot.textContent = '-';
+                previewImg.src = '';
+                previewRow.style.display = 'none';
+            }
             
             // Show modal
             resultModal.style.display = 'flex';

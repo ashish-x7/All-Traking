@@ -1,5 +1,5 @@
-AWB,Courier
-123456789,Delhivery
-987654321,Blue Dart
-554433221,DTDC
-667788990,Ekart
+AWB,Courier,Platform Status
+123456789,Delhivery,Shipped
+987654321,Blue Dart,In Transit
+554433221,DTDC,Pending
+667788990,Ekart,Delivered
