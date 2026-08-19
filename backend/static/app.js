@@ -38,9 +38,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const statFailed = document.getElementById('stat-failed');
     const statApi = document.getElementById('stat-api');
 
+    const SESSION_KEY = 'trackship_session_state';
+
     // Application State
     let state = {
         isTracking: false,
+        progress: 0,
         taskId: null,
         shipments: [], // Full list of shipments tracked
         filteredShipments: [], // Screen filtered list
@@ -50,11 +53,102 @@ document.addEventListener('DOMContentLoaded', () => {
         activeColumnFilters: {} // Excel column filter tracking
     };
 
+    // --- Session Storage State Persistence ---
+    function saveSessionState() {
+        try {
+            const payload = {
+                taskId: state.taskId,
+                shipments: state.shipments,
+                stats: state.stats,
+                isTracking: state.isTracking,
+                progress: state.progress || 0,
+                progressText: progressText.textContent || '',
+                currentPage: state.currentPage,
+                activeColumnFilters: state.activeColumnFilters,
+                fileSelected: selectedFileContainer.style.display !== 'none',
+                fileName: selectedFileName.textContent,
+                fileSize: selectedFileSize.textContent
+            };
+            sessionStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+        } catch (e) {
+            console.warn('Failed to save to sessionStorage:', e);
+        }
+    }
+
+    async function syncTaskToBackendSilently() {
+        if (!state.taskId || !state.shipments || state.shipments.length === 0) return;
+        try {
+            await fetch('/api/restore_task', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    task_id: state.taskId,
+                    shipments: state.shipments
+                })
+            });
+        } catch (e) {
+            // Silently ignore if server is sleeping or waking up
+        }
+    }
+
+    async function restoreSessionState() {
+        try {
+            const raw = sessionStorage.getItem(SESSION_KEY);
+            if (raw) {
+                const saved = JSON.parse(raw);
+                if (saved && saved.shipments && saved.shipments.length > 0) {
+                    state.taskId = saved.taskId || ('task_' + Date.now());
+                    state.shipments = saved.shipments;
+                    state.stats = saved.stats || { total: saved.shipments.length, delivered: 0, transit: 0, failed: 0, api_calls: 0 };
+                    state.currentPage = saved.currentPage || 1;
+                    state.activeColumnFilters = saved.activeColumnFilters || {};
+                    state.isTracking = !!saved.isTracking;
+                    state.progress = saved.progress || 0;
+
+                    if (saved.fileSelected && saved.fileName) {
+                        selectedFileName.textContent = saved.fileName;
+                        selectedFileSize.textContent = saved.fileSize || '';
+                        dropZone.style.display = 'none';
+                        selectedFileContainer.style.display = 'block';
+                    }
+
+                    startTrackingBtn.disabled = false;
+                    exportBtn.disabled = false;
+                    clearAllBtn.disabled = false;
+
+                    updateStatsUI();
+                    applyFilters(false);
+
+                    if (state.isTracking && state.progress < 100) {
+                        progressPanel.style.visibility = 'visible';
+                        progressBarFill.style.width = `${state.progress}%`;
+                        progressPercent.textContent = `${state.progress}%`;
+                        progressText.textContent = saved.progressText || 'Resuming tracking...';
+                        startTrackingBtn.disabled = true;
+                        pollProgress();
+                    } else if (state.progress >= 100) {
+                        progressPanel.style.visibility = 'visible';
+                        progressBarFill.style.width = `100%`;
+                        progressPercent.textContent = `100%`;
+                        progressText.textContent = 'Sync All Completed!';
+                    }
+
+                    // Background restore to backend in case Render woke up from sleep
+                    syncTaskToBackendSilently();
+                    return true;
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to parse sessionStorage:', e);
+        }
+        return false;
+    }
+
     // --- Drag and Drop File Handlers ---
     
     dropZone.addEventListener('click', (e) => {
         if (e.target.className !== 'browse-btn' && !e.target.closest('.browse-btn')) {
-            // only trigger if user clicked browse or surrounding area
+            // trigger file dialog
         }
         fileInput.click();
     });
@@ -118,6 +212,8 @@ document.addEventListener('DOMContentLoaded', () => {
         state.shipments = [];
         state.filteredShipments = [];
         state.isTracking = false;
+        state.progress = 0;
+        sessionStorage.removeItem(SESSION_KEY);
         renderTable([]);
         updateStatsUI();
     }
@@ -154,6 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Render rows in table
             applyFilters();
             recalculateStats();
+            saveSessionState();
             
         } catch (error) {
             alert(`Error uploading file: ${error.message}`);
@@ -163,29 +260,43 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // "Sync All" button triggers bulk simulation run
     startTrackingBtn.addEventListener('click', async () => {
-        if (!state.taskId) return;
+        if (!state.taskId && state.shipments.length === 0) return;
+        if (!state.taskId) {
+            state.taskId = 'task_' + Date.now();
+        }
 
         try {
             startTrackingBtn.disabled = true;
-            
+            progressPanel.style.visibility = 'visible';
+            state.isTracking = true;
+            state.progress = 0;
+            progressBarFill.style.width = '0%';
+            progressPercent.textContent = '0%';
+            progressText.textContent = 'Starting courier tracking...';
+            saveSessionState();
+            renderCurrentPage();
+
             const startRes = await fetch('/api/track/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ task_id: state.taskId })
+                body: JSON.stringify({
+                    task_id: state.taskId,
+                    shipments: state.shipments
+                })
             });
 
             if (!startRes.ok) {
-                throw new Error('Failed to start tracking engine');
+                const errData = await startRes.json().catch(() => ({}));
+                throw new Error(errData.detail || 'Failed to start tracking engine');
             }
 
-            progressPanel.style.visibility = 'visible';
-            state.isTracking = true;
-            renderCurrentPage();
             pollProgress();
 
         } catch (error) {
             alert(`Error starting tracking: ${error.message}`);
             startTrackingBtn.disabled = false;
+            state.isTracking = false;
+            saveSessionState();
         }
     });
 
@@ -224,13 +335,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const res = await fetch(`/api/track/progress?task_id=${state.taskId}`);
-            if (!res.ok) throw new Error('Progress fetch failed');
+            if (!res.ok) {
+                if (res.status === 404) {
+                    // Task lost during server sleep/restart: auto-resume by starting with current shipments
+                    console.log('Task missing in DB on poll, auto-recovering tracking session...');
+                    await fetch('/api/track/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            task_id: state.taskId,
+                            shipments: state.shipments
+                        })
+                    });
+                    setTimeout(pollProgress, 1500);
+                    return;
+                }
+                throw new Error('Progress fetch failed');
+            }
 
             const data = await res.json();
             
             // Update local state
             state.shipments = data.shipments;
             const progress = data.progress;
+            state.progress = progress;
             if (data.stats) {
                 state.stats = data.stats;
             }
@@ -249,15 +377,18 @@ document.addEventListener('DOMContentLoaded', () => {
             // Update Table and Stats without resetting active page
             applyFilters(false);
             recalculateStats();
+            saveSessionState();
 
             if (data.status === 'completed' || progress >= 100) {
                 state.isTracking = false;
                 progressText.textContent = 'Sync All Completed!';
                 startTrackingBtn.disabled = false;
+                saveSessionState();
             } else if (data.status === 'failed') {
                 state.isTracking = false;
                 progressText.textContent = 'Sync All Failed.';
                 startTrackingBtn.disabled = false;
+                saveSessionState();
             } else {
                 // Poll again in 1.5 seconds
                 setTimeout(pollProgress, 1500);
@@ -265,16 +396,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (error) {
             console.error('Polling error:', error);
-            setTimeout(pollProgress, 2000);
+            if (state.isTracking) {
+                setTimeout(pollProgress, 2000);
+            }
         }
     }
 
     // Individual Row Sync Handler
     async function syncSingleShipment(trackingNumber, courier, syncButton) {
-        if (!state.taskId) return;
+        if (!state.taskId && state.shipments.length === 0) return;
+        if (!state.taskId) state.taskId = 'task_' + Date.now();
         
         syncButton.innerHTML = `<img src="/static/loading.gif" alt="Syncing" style="width: 18px; height: 18px; vertical-align: middle;">`;
         syncButton.disabled = true;
+
+        const currentItem = state.shipments.find(s => s.tracking_number === trackingNumber);
 
         try {
             const res = await fetch('/api/track/sync_single', {
@@ -283,7 +419,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({
                     task_id: state.taskId,
                     tracking_number: trackingNumber,
-                    courier: courier
+                    courier: courier,
+                    invoice_no: currentItem ? currentItem.invoice_no : '',
+                    platform_status: currentItem ? currentItem.platform_status : ''
                 })
             });
 
@@ -310,8 +448,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Render and update stats
-            applyFilters();
+            applyFilters(false);
             recalculateStats();
+            saveSessionState();
 
         } catch (error) {
             alert(`Error syncing AWB ${trackingNumber}: ${error.message}`);
@@ -322,9 +461,48 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    exportBtn.addEventListener('click', () => {
-        if (!state.taskId) return;
-        window.location.href = `/api/export?task_id=${state.taskId}`;
+    // Direct Excel export from client memory (guarantees export works even if Render woke up recently)
+    exportBtn.addEventListener('click', async () => {
+        if (!state.shipments || state.shipments.length === 0) return;
+
+        const originalBtnHtml = exportBtn.innerHTML;
+        exportBtn.innerHTML = `<img src="/static/loading.gif" alt="Exporting" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 6px;"> Exporting...`;
+        exportBtn.disabled = true;
+
+        try {
+            const res = await fetch('/api/export_direct', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    task_id: state.taskId || 'export',
+                    shipments: state.shipments
+                })
+            });
+
+            if (!res.ok) throw new Error('Failed to generate Excel export');
+
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const taskSuffix = state.taskId ? state.taskId.substring(0, 8) : 'export';
+            a.download = `tracking_export_${taskSuffix}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (e) {
+            // Fallback to GET endpoint
+            if (state.taskId) {
+                window.location.href = `/api/export?task_id=${state.taskId}`;
+            } else {
+                alert(`Export error: ${e.message}`);
+            }
+        } finally {
+            exportBtn.innerHTML = originalBtnHtml;
+            exportBtn.disabled = false;
+            lucide.createIcons();
+        }
     });
 
     // --- Search & Filters ---
@@ -425,6 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state.currentPage > 1) {
             state.currentPage--;
             renderCurrentPage();
+            saveSessionState();
         }
     });
 
@@ -433,6 +612,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state.currentPage < totalPages) {
             state.currentPage++;
             renderCurrentPage();
+            saveSessionState();
         }
     });
 
@@ -446,6 +626,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         state.currentPage = page;
         renderCurrentPage();
+        saveSessionState();
     });
 
     gotoPageInput.addEventListener('keydown', (e) => {
@@ -635,7 +816,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
     }
 
-    // --- Auto-load latest data on page refresh ---
+    // --- Auto-load latest data on page refresh if sessionStorage was empty ---
     async function loadLatestData() {
         try {
             const res = await fetch('/api/latest');
@@ -652,9 +833,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 exportBtn.disabled = false;
                 clearAllBtn.disabled = false;
                 startTrackingBtn.disabled = false;
+                saveSessionState();
             }
         } catch (e) {
-            console.log('No previous data to restore.');
+            console.log('No previous data to restore from server.');
         }
     }
 
@@ -928,15 +1110,21 @@ document.addEventListener('DOMContentLoaded', () => {
             
             closeActiveDropdown();
             applyFilters(true);
+            saveSessionState();
         });
         
         dropdown.querySelector('.excel-filter-clear').addEventListener('click', () => {
             state.activeColumnFilters[colKey] = [];
             closeActiveDropdown();
             applyFilters(true);
+            saveSessionState();
         });
     }
 
-    // Load saved data on page load
-    loadLatestData();
+    // Initialize State on Page Load (restore from session storage first)
+    restoreSessionState().then(hasSession => {
+        if (!hasSession) {
+            loadLatestData();
+        }
+    });
 });

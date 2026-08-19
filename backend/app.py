@@ -121,11 +121,22 @@ init_db()
 
 class StartTrackRequest(BaseModel):
     task_id: str
+    shipments: Optional[List[dict]] = None
 
 class SyncSingleRequest(BaseModel):
     task_id: str
     tracking_number: str
     courier: str
+    invoice_no: Optional[str] = ""
+    platform_status: Optional[str] = ""
+
+class RestoreTaskRequest(BaseModel):
+    task_id: str
+    shipments: List[dict]
+
+class ExportDirectRequest(BaseModel):
+    task_id: Optional[str] = "export"
+    shipments: List[dict]
 
 @app.get('/')
 def root():
@@ -392,11 +403,34 @@ async def start_tracking(body: StartTrackRequest, background_tasks: BackgroundTa
     cursor = conn.cursor()
     cursor.execute("SELECT 1 FROM tasks WHERE task_id = ?", (task_id,))
     exists = cursor.fetchone()
-    conn.close()
     
+    # Self-healing: If task doesn't exist in DB (e.g. server woke up or restarted), re-create it if shipments are sent
     if not exists:
-        raise HTTPException(status_code=404, detail="Task ID not found")
-    
+        if body.shipments:
+            cursor.execute("INSERT OR REPLACE INTO tasks (task_id, status, progress, current_action) VALUES (?, ?, ?, ?)", (task_id, "pending", 0, "Ready to start"))
+            for s in body.shipments:
+                cursor.execute("""
+                INSERT INTO shipments (task_id, invoice_no, tracking_number, courier, platform_status, status, last_location, timestamp, last_sync, screenshot)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    task_id,
+                    s.get("invoice_no", ""),
+                    s["tracking_number"],
+                    s.get("courier", "Delhivery"),
+                    s.get("platform_status", ""),
+                    s.get("status", "Pending"),
+                    s.get("last_location", "Awaiting scan"),
+                    s.get("timestamp", "-"),
+                    s.get("last_sync", "-"),
+                    s.get("screenshot", "-")
+                ))
+            cursor.execute("INSERT INTO logs (task_id, message, level) VALUES (?, ?, ?)", (task_id, f"Restored {len(body.shipments)} records into task session.", "info"))
+            conn.commit()
+        else:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Task ID not found")
+            
+    conn.close()
     background_tasks.add_task(run_tracking_simulation, task_id)
     return {"status": "started"}
 
@@ -417,15 +451,24 @@ async def sync_single_shipment(body: SyncSingleRequest):
         from datetime import datetime
         last_sync_str = datetime.now().strftime("%d-%m-%Y %I:%M:%S %p")
         
-        # Update database
+        # Self-healing: Ensure task and shipment exist in DB
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("INSERT INTO api_usage DEFAULT VALUES;")
-        cursor.execute("""
-        UPDATE shipments 
-        SET status = ?, last_location = ?, timestamp = ?, last_sync = ?, screenshot = ? 
-        WHERE task_id = ? AND tracking_number = ?
-        """, (result.get("status"), result.get("last_location"), result.get("timestamp"), last_sync_str, result.get("screenshot", "-"), task_id, awb))
+        cursor.execute("INSERT OR IGNORE INTO tasks (task_id, status, progress, current_action) VALUES (?, ?, ?, ?)", (task_id, "completed", 100, "Idle"))
+        
+        cursor.execute("SELECT 1 FROM shipments WHERE task_id = ? AND tracking_number = ?", (task_id, awb))
+        if not cursor.fetchone():
+            cursor.execute("""
+            INSERT INTO shipments (task_id, invoice_no, tracking_number, courier, platform_status, status, last_location, timestamp, last_sync, screenshot)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (task_id, body.invoice_no or "", awb, courier, body.platform_status or "", result.get("status"), result.get("last_location"), result.get("timestamp"), last_sync_str, result.get("screenshot", "-")))
+        else:
+            cursor.execute("""
+            UPDATE shipments 
+            SET status = ?, last_location = ?, timestamp = ?, last_sync = ?, screenshot = ? 
+            WHERE task_id = ? AND tracking_number = ?
+            """, (result.get("status"), result.get("last_location"), result.get("timestamp"), last_sync_str, result.get("screenshot", "-"), task_id, awb))
         
         # Log the manual update
         cursor.execute("""
@@ -519,17 +562,7 @@ async def get_progress(task_id: str):
     }
 
 
-@app.get('/api/export')
-async def export_results(task_id: str, request: Request):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT invoice_no, tracking_number, courier, platform_status, status, last_location, timestamp, last_sync, screenshot FROM shipments WHERE task_id = ?", (task_id,))
-    shipment_rows = cursor.fetchall()
-    conn.close()
-    
-    if not shipment_rows:
-        raise HTTPException(status_code=404, detail="Task ID not found")
-        
+def generate_excel_stream(shipment_rows, task_id: str, request: Request):
     import openpyxl
     from openpyxl.styles import Font, Alignment, PatternFill
     from openpyxl.utils import get_column_letter
@@ -595,7 +628,10 @@ async def export_results(task_id: str, request: Request):
         if screenshot_path and screenshot_path != "-":
             # Construct absolute URL
             base_url_str = str(request.base_url).rstrip('/')
-            screenshot_url = f"{base_url_str}{screenshot_path}"
+            if str(screenshot_path).startswith("http"):
+                screenshot_url = screenshot_path
+            else:
+                screenshot_url = f"{base_url_str}{screenshot_path}"
             cell.value = "Link"
             cell.hyperlink = screenshot_url
             cell.font = Font(name="Segoe UI", size=11, color="0000FF", underline="single")
@@ -618,11 +654,73 @@ async def export_results(task_id: str, request: Request):
     wb.save(out_buf)
     out_buf.seek(0)
 
+    filename_suffix = (task_id[:8] if task_id else "export")
     return StreamingResponse(
         out_buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=tracking_export_{task_id[:8]}.xlsx"}
+        headers={"Content-Disposition": f"attachment; filename=tracking_export_{filename_suffix}.xlsx"}
     )
+
+
+@app.get('/api/export')
+async def export_results(task_id: str, request: Request):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT invoice_no, tracking_number, courier, platform_status, status, last_location, timestamp, last_sync, screenshot FROM shipments WHERE task_id = ?", (task_id,))
+    shipment_rows = cursor.fetchall()
+    conn.close()
+    
+    if not shipment_rows:
+        raise HTTPException(status_code=404, detail="Task ID not found")
+        
+    return generate_excel_stream(shipment_rows, task_id, request)
+
+
+@app.post('/api/export_direct')
+async def export_direct(body: ExportDirectRequest, request: Request):
+    """Export Excel directly from client-supplied shipments if server DB was reset."""
+    rows = []
+    for s in body.shipments:
+        rows.append((
+            s.get("invoice_no", ""),
+            s.get("tracking_number", ""),
+            s.get("courier", ""),
+            s.get("platform_status", ""),
+            s.get("status", ""),
+            s.get("last_location", ""),
+            s.get("timestamp", ""),
+            s.get("last_sync", "-"),
+            s.get("screenshot", "-")
+        ))
+    return generate_excel_stream(rows, body.task_id or "export", request)
+
+
+@app.post('/api/restore_task')
+async def restore_task(body: RestoreTaskRequest):
+    """Restore task and shipments into SQLite database from client session storage."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO tasks (task_id, status, progress, current_action) VALUES (?, ?, ?, ?)", (body.task_id, "completed", 100, "Restored from session"))
+    cursor.execute("DELETE FROM shipments WHERE task_id = ?", (body.task_id,))
+    for s in body.shipments:
+        cursor.execute("""
+        INSERT INTO shipments (task_id, invoice_no, tracking_number, courier, platform_status, status, last_location, timestamp, last_sync, screenshot)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            body.task_id,
+            s.get("invoice_no", ""),
+            s["tracking_number"],
+            s.get("courier", "Delhivery"),
+            s.get("platform_status", ""),
+            s.get("status", "Pending"),
+            s.get("last_location", "Awaiting scan"),
+            s.get("timestamp", "-"),
+            s.get("last_sync", "-"),
+            s.get("screenshot", "-")
+        ))
+    conn.commit()
+    conn.close()
+    return {"status": "restored", "count": len(body.shipments)}
 
 
 
