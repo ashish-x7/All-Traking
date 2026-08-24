@@ -15,7 +15,7 @@ if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from services.tracking_service import TrackingService
@@ -32,15 +32,96 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+SCREENSHOTS_DIR = os.path.join(STATIC_DIR, "screenshots")
+UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")
+OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
+DB_PATH = os.path.join(BASE_DIR, "tracking.db")
+
 # Ensure folders exist
-os.makedirs("uploads", exist_ok=True)
-os.makedirs("outputs", exist_ok=True)
-os.makedirs("static/screenshots", exist_ok=True)
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+os.makedirs(OUTPUTS_DIR, exist_ok=True)
+os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
+
+def get_courier_direct_url(courier: str, awb: str) -> str:
+    c = (courier or "").lower()
+    awb_upper = (awb or "").upper().strip()
+    if "shadowfax" in c or awb_upper.startswith("SF") or awb_upper.startswith("R"):
+        return f"https://trackcourier.io/track-and-trace/shadowfax/{awb}"
+    elif "delhivery" in c:
+        return f"https://www.delhivery.com/track/package/{awb}"
+    elif "bluedart" in c or "blue dart" in c:
+        return f"https://www.bluedart.com/tracking"
+    elif "ekart" in c or awb_upper.startswith("FMP") or awb_upper.startswith("EKART"):
+        return f"https://ekartlogistics.com/"
+    elif "xpressbees" in c:
+        return f"https://www.xpressbees.com/track?isawb=Yes&trackid={awb}"
+    elif "dtdc" in c:
+        return f"https://www.dtdc.in/tracking.asp"
+    elif "ecom" in c:
+        return f"https://ecomexpress.in/tracking/?awb_field={awb}"
+    elif "india post" in c or "indiapost" in c:
+        return f"https://www.indiapost.gov.in/_layouts/15/dop.portal.tracking/trackconsignment.aspx"
+    else:
+        return f"https://www.delhivery.com/track/package/{awb}"
+
+@app.get('/static/screenshots/{filename}')
+async def serve_screenshot(filename: str):
+    """
+    Intelligent screenshot server:
+    1. Returns cached screenshot if present on disk.
+    2. If missing (e.g. Render server restarted/slept), tries live-capturing screenshot.
+    3. If capture fails or times out, seamlessly redirects to live official courier tracking page.
+    Never returns 404!
+    """
+    file_path = os.path.join(SCREENSHOTS_DIR, filename)
+    if os.path.exists(file_path):
+        return FileResponse(file_path, media_type="image/png")
+    
+    awb = filename.replace(".png", "").strip()
+    
+    # Identify courier
+    courier = ""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT courier FROM shipments WHERE tracking_number = ? LIMIT 1", (awb,))
+        row = cursor.fetchone()
+        if row:
+            courier = row[0]
+        conn.close()
+    except Exception:
+        pass
+        
+    if not courier:
+        if awb.upper().startswith("R") or awb.upper().startswith("SF"):
+            courier = "Shadowfax"
+        elif awb.isdigit() and len(awb) in [12, 13, 14, 15]:
+            courier = "Delhivery"
+        elif awb.upper().startswith("X") or awb.upper().startswith("14"):
+            courier = "Xpressbees"
+        elif awb.upper().startswith("FMP") or awb.upper().startswith("EKART"):
+            courier = "Ekart"
+        else:
+            courier = "Delhivery"
+
+    # Attempt fast on-demand capture
+    scraper = ScraperFactory.get_scraper(courier)
+    if scraper:
+        try:
+            await asyncio.wait_for(scraper.track(awb), timeout=8.0)
+            if os.path.exists(file_path):
+                return FileResponse(file_path, media_type="image/png")
+        except Exception as e:
+            print(f"On-demand screenshot capture failed for {awb}: {e}")
+
+    # Fallback to official tracking URL so clicking link in Excel always works
+    direct_url = get_courier_direct_url(courier, awb)
+    return RedirectResponse(url=direct_url, status_code=307)
 
 # Mount static folder
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-DB_PATH = "tracking.db"
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
