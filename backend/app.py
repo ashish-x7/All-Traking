@@ -53,8 +53,8 @@ def get_courier_direct_url(courier: str, awb: str) -> str:
         return f"https://www.delhivery.com/track/package/{awb}"
     elif "bluedart" in c or "blue dart" in c:
         return f"https://www.bluedart.com/tracking"
-    elif "ekart" in c or awb_upper.startswith("FMP") or awb_upper.startswith("EKART"):
-        return f"https://ekartlogistics.com/"
+    elif "ekart" in c or "ekl" in c or "myntra" in c or awb_upper.startswith("FMP") or awb_upper.startswith("EKART") or awb_upper.startswith("MY"):
+        return f"https://www.ekartlogistics.com/ekartlogistics-web/shipmenttrack/{awb}"
     elif "xpressbees" in c:
         return f"https://www.xpressbees.com/track?isawb=Yes&trackid={awb}"
     elif "dtdc" in c:
@@ -101,7 +101,7 @@ async def serve_screenshot(filename: str):
             courier = "Delhivery"
         elif awb.upper().startswith("X") or awb.upper().startswith("14"):
             courier = "Xpressbees"
-        elif awb.upper().startswith("FMP") or awb.upper().startswith("EKART"):
+        elif awb.upper().startswith("FMP") or awb.upper().startswith("EKART") or awb.upper().startswith("MY"):
             courier = "Ekart"
         else:
             courier = "Delhivery"
