@@ -1,10 +1,9 @@
 from .base import BaseScraper
-from playwright.async_api import async_playwright
 import asyncio
 import os
 
 class ShadowfaxScraper(BaseScraper):
-    async def track(self, awb: str) -> dict:
+    async def track(self, awb: str, capture_screenshot: bool = False) -> dict:
         from browser.playwright_manager import playwright_manager
         url = f"https://trackcourier.io/track-and-trace/shadowfax/{awb}"
         max_attempts = 2
@@ -18,22 +17,19 @@ class ShadowfaxScraper(BaseScraper):
                 # Bypass headless webdriver detection to resolve Proof of Work / Anti-bot blocks
                 await page.add_init_script("delete navigator.__proto__.webdriver;")
                 
-                # Intercept to block ads/trackers but allow stylesheets & first-party images for nice screenshots
+                # Intercept to block ads/trackers
                 async def intercept_route(route):
                     req = route.request
                     res_type = req.resource_type
                     url_lower = req.url.lower()
                     
-                    # Allow stylesheets so the screenshot layout is styled correctly.
-                    # Block media and fonts to save bandwidth.
                     if res_type in ["media", "font"]:
                         await route.abort()
                         return
                         
-                    # Only block images if they are ads/third-party
+                    # If not capturing screenshot, block all images to maximize scraping speed
                     if res_type == "image":
-                        # Allow images from trackcourier.io domain (logos, etc.)
-                        if "trackcourier.io" in url_lower:
+                        if capture_screenshot and "trackcourier.io" in url_lower:
                             await route.continue_()
                             return
                         else:
@@ -117,17 +113,18 @@ class ShadowfaxScraper(BaseScraper):
                     continue
                     
                 if not result.get("success"):
-                    # Double check if it's a fetch failure
                     if "FAILED TO FETCH" in additional_info.upper():
                         return {
                             "status": "Scrape Error",
                             "last_location": "Gateway failed to fetch tracking data. Please retry.",
-                            "timestamp": "-"
+                            "timestamp": "-",
+                            "screenshot": "-"
                         }
                     return {
                         "status": "",
                         "last_location": "",
-                        "timestamp": "-"
+                        "timestamp": "-",
+                        "screenshot": "-"
                     }
                 
                 checkpoints = result.get("checkpoints", [])
@@ -137,8 +134,8 @@ class ShadowfaxScraper(BaseScraper):
                 timestamp = "-"
                 
                 if checkpoints:
-                    import re
                     from datetime import datetime
+                    import re
                     
                     def parse_checkpoint_time(time_str: str) -> datetime:
                         time_str = re.sub(r'\s+', ' ', time_str.strip())
@@ -197,6 +194,15 @@ class ShadowfaxScraper(BaseScraper):
                 elif "failed" in status_lower or "undelivered" in status_lower or "unable to deliver" in status_lower:
                     status = "Failed"
                     
+                # If screenshot not requested, return immediately in super-fast mode
+                if not capture_screenshot:
+                    return {
+                        "status": status,
+                        "last_location": last_location,
+                        "timestamp": timestamp,
+                        "screenshot": "-"
+                    }
+                    
                 # Take screenshot of the tracking details block
                 screenshot_path = f"/static/screenshots/{awb}.png"
                 try:
@@ -205,7 +211,6 @@ class ShadowfaxScraper(BaseScraper):
                     screenshot_file = os.path.join(backend_dir, "static", "screenshots", f"{awb}.png")
                     os.makedirs(os.path.dirname(screenshot_file), exist_ok=True)
                     
-                    # Try to capture the specific tracking card container (.block.m-b-2)
                     card = page.locator(".block.m-b-2").first
                     if await card.count() > 0:
                         await card.screenshot(path=screenshot_file)
@@ -229,7 +234,8 @@ class ShadowfaxScraper(BaseScraper):
                 return {
                     "status": "Scrape Error",
                     "last_location": f"Error: {str(e)}",
-                    "timestamp": "-"
+                    "timestamp": "-",
+                    "screenshot": "-"
                 }
             finally:
                 if page:

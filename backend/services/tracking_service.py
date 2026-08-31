@@ -3,7 +3,7 @@ import asyncio
 
 class TrackingService:
     @staticmethod
-    async def track_shipments(shipments, task_id, progress_callback):
+    async def track_shipments(shipments, task_id, progress_callback, capture_screenshot: bool = False):
         total = len(shipments)
         for i, shipment in enumerate(shipments):
             awb = shipment["tracking_number"]
@@ -13,7 +13,7 @@ class TrackingService:
             await progress_callback(
                 progress=int(((i) / total) * 100),
                 current_action=f"Tracking {awb} via {courier}...",
-                log_message=f"Starting scraping for {courier} AWB {awb}...",
+                log_message=f"Starting tracking for {courier} AWB {awb}...",
                 log_level="info"
             )
             
@@ -30,7 +30,7 @@ class TrackingService:
                     except Exception as db_err:
                         print("Failed to record api usage in service:", db_err)
 
-                    result = await scraper.track(awb)
+                    result = await scraper.track(awb, capture_screenshot=capture_screenshot)
                     
                     from datetime import datetime
                     last_sync_str = datetime.now().strftime("%d-%m-%Y %I:%M:%S %p")
@@ -79,14 +79,21 @@ class TrackingService:
                     log_level="warning"
                 )
             
-            # small delay between calls (longer for bluedart to prevent rate-limiting)
-            delay = 2.0 if courier.lower() == "bluedart" else 0.5
+            # Smart delay: fast for API-based couriers, safe for browser-based scrapers
+            c_lower = courier.lower()
+            if not capture_screenshot and any(c in c_lower for c in ["delhivery", "ekart", "bluedart"]):
+                delay = 0.1
+            elif "bluedart" in c_lower:
+                delay = 1.0
+            else:
+                delay = 0.5
             await asyncio.sleep(delay)
             
         # Final update
         await progress_callback(
             progress=100,
-            current_action="Scraping run completed",
+            current_action="Tracking run completed",
             log_message="All tracking numbers processed.",
             log_level="success"
         )
+

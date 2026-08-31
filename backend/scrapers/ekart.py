@@ -96,9 +96,14 @@ def fetch_ekart(awb: str) -> dict:
     }
 
 class EkartScraper(BaseScraper):
-    async def track(self, awb: str) -> dict:
+    async def track(self, awb: str, capture_screenshot: bool = False) -> dict:
         try:
             res = await asyncio.to_thread(fetch_ekart, awb)
+            
+            # If screenshot not requested, return immediately in super-fast mode (0.3s)
+            if not capture_screenshot:
+                res["screenshot"] = "-"
+                return res
             
             # Optional screenshot capture via Playwright
             screenshot_path = f"/static/screenshots/{awb}.png"

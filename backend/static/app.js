@@ -23,6 +23,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const filterStatus = document.getElementById('filter-status');
     const tableBody = document.getElementById('table-body');
     
+    // Screenshot / Fast Mode Toggle Elements
+    const screenshotToggle = document.getElementById('screenshot-toggle');
+    const modeToggleLabel = document.getElementById('mode-toggle-label');
+    
     // Pagination Elements
     const prevPageBtn = document.getElementById('prev-page-btn');
     const nextPageBtn = document.getElementById('next-page-btn');
@@ -45,6 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
         isTracking: false,
         progress: 0,
         taskId: null,
+        captureScreenshot: false, // Default Fast Mode
         shipments: [], // Full list of shipments tracked
         filteredShipments: [], // Screen filtered list
         stats: { total: 0, delivered: 0, transit: 0, failed: 0, api_calls: 0 },
@@ -52,6 +57,24 @@ document.addEventListener('DOMContentLoaded', () => {
         rowsPerPage: 50,
         activeColumnFilters: {} // Excel column filter tracking
     };
+
+    function updateModeToggleUI() {
+        if (!modeToggleLabel || !screenshotToggle) return;
+        screenshotToggle.checked = !!state.captureScreenshot;
+        if (state.captureScreenshot) {
+            modeToggleLabel.innerHTML = `<span class="screenshot-badge">📸 Screenshot Mode</span>`;
+        } else {
+            modeToggleLabel.innerHTML = `<span class="fast-badge">⚡ Fast Track</span>`;
+        }
+    }
+
+    if (screenshotToggle) {
+        screenshotToggle.addEventListener('change', () => {
+            state.captureScreenshot = screenshotToggle.checked;
+            updateModeToggleUI();
+            saveSessionState();
+        });
+    }
 
     // --- Session Storage State Persistence ---
     function saveSessionState() {
@@ -63,6 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 isTracking: state.isTracking,
                 progress: state.progress || 0,
                 progressText: progressText.textContent || '',
+                captureScreenshot: state.captureScreenshot,
                 currentPage: state.currentPage,
                 activeColumnFilters: state.activeColumnFilters,
                 fileSelected: selectedFileContainer.style.display !== 'none',
@@ -104,6 +128,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     state.activeColumnFilters = saved.activeColumnFilters || {};
                     state.isTracking = !!saved.isTracking;
                     state.progress = saved.progress || 0;
+                    if (saved.captureScreenshot !== undefined) {
+                        state.captureScreenshot = !!saved.captureScreenshot;
+                    }
+                    updateModeToggleUI();
 
                     if (saved.fileSelected && saved.fileName) {
                         selectedFileName.textContent = saved.fileName;
@@ -159,42 +187,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    dropZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        dropZone.classList.add('dragover');
+    // Drag and drop events
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
     });
 
-    dropZone.addEventListener('dragleave', () => {
-        dropZone.classList.remove('dragover');
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, () => dropZone.classList.add('drag-over'), false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, () => dropZone.classList.remove('drag-over'), false);
     });
 
     dropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        dropZone.classList.remove('dragover');
-        if (e.dataTransfer.files.length > 0) {
-            handleFileSelect(e.dataTransfer.files[0]);
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files.length > 0) {
+            handleFileSelect(files[0]);
         }
     });
-
-    async function handleFileSelect(file) {
-        const validExtensions = ['.csv', '.xlsx', '.xls'];
-        const fileName = file.name.toLowerCase();
-        const isValid = validExtensions.some(ext => fileName.endsWith(ext));
-        
-        if (!isValid) {
-            alert('Invalid file format. Please upload a CSV or Excel sheet.');
-            return;
-        }
-
-        // Show file details in UI
-        selectedFileName.textContent = file.name;
-        selectedFileSize.textContent = formatBytes(file.size);
-        dropZone.style.display = 'none';
-        selectedFileContainer.style.display = 'block';
-
-        // Auto Upload on Select (does not start tracking automatically)
-        await uploadFile(file);
-    }
 
     removeFileBtn.addEventListener('click', () => {
         resetUploadSection();
@@ -202,40 +219,66 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function resetUploadSection() {
         fileInput.value = '';
-        dropZone.style.display = 'flex';
         selectedFileContainer.style.display = 'none';
+        dropZone.style.display = 'flex';
         startTrackingBtn.disabled = true;
         exportBtn.disabled = true;
         clearAllBtn.disabled = true;
         progressPanel.style.visibility = 'hidden';
+        progressBarFill.style.width = '0%';
+        progressPercent.textContent = '0%';
+        progressText.textContent = 'Awaiting start...';
+
         state.taskId = null;
         state.shipments = [];
         state.filteredShipments = [];
+        state.stats = { total: 0, delivered: 0, transit: 0, failed: 0, api_calls: state.stats.api_calls || 0 };
+        state.currentPage = 1;
+        state.activeColumnFilters = {};
         state.isTracking = false;
         state.progress = 0;
+
         sessionStorage.removeItem(SESSION_KEY);
-        renderTable([]);
         updateStatsUI();
+        applyFilters();
     }
 
-    // --- API Calls ---
+    async function handleFileSelect(file) {
+        if (!file) return;
 
-    async function uploadFile(file) {
+        const allowedExtensions = ['.csv', '.xlsx', '.xls'];
+        const fileName = file.name;
+        const fileExt = fileName.substring(fileName.lastIndexOf('.')).toLowerCase();
+
+        if (!allowedExtensions.includes(fileExt)) {
+            alert('Unsupported file format. Please upload a CSV or Excel file.');
+            return;
+        }
+
+        // Show UI file info
+        selectedFileName.textContent = fileName;
+        selectedFileSize.textContent = formatBytes(file.size);
+        dropZone.style.display = 'none';
+        selectedFileContainer.style.display = 'block';
+
+        // Prepare FormData for server upload
         const formData = new FormData();
         formData.append('file', file);
 
         try {
-            const uploadRes = await fetch('/api/upload', {
+            const res = await fetch('/api/upload', {
                 method: 'POST',
                 body: formData
             });
 
-            if (!uploadRes.ok) {
-                const errData = await uploadRes.json();
-                throw new Error(errData.detail || 'Failed to upload file');
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.detail || 'Upload failed');
             }
 
-            const uploadData = await uploadRes.json();
+            const uploadData = await res.json();
+            
+            // Set App State
             state.taskId = uploadData.task_id;
             state.shipments = uploadData.shipments || [];
             if (uploadData.stats) {
@@ -272,7 +315,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.progress = 0;
             progressBarFill.style.width = '0%';
             progressPercent.textContent = '0%';
-            progressText.textContent = 'Starting courier tracking...';
+            progressText.textContent = state.captureScreenshot ? 'Starting screenshot tracking...' : 'Starting fast tracking...';
             saveSessionState();
             renderCurrentPage();
 
@@ -281,7 +324,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     task_id: state.taskId,
-                    shipments: state.shipments
+                    shipments: state.shipments,
+                    capture_screenshot: !!state.captureScreenshot
                 })
             });
 
@@ -344,7 +388,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             task_id: state.taskId,
-                            shipments: state.shipments
+                            shipments: state.shipments,
+                            capture_screenshot: !!state.captureScreenshot
                         })
                     });
                     setTimeout(pollProgress, 1500);
@@ -421,7 +466,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     tracking_number: trackingNumber,
                     courier: courier,
                     invoice_no: currentItem ? currentItem.invoice_no : '',
-                    platform_status: currentItem ? currentItem.platform_status : ''
+                    platform_status: currentItem ? currentItem.platform_status : '',
+                    capture_screenshot: !!state.captureScreenshot
                 })
             });
 
@@ -868,7 +914,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     tracking_number: awb,
-                    courier: courier
+                    courier: courier,
+                    capture_screenshot: !!state.captureScreenshot
                 })
             });
 

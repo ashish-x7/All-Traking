@@ -203,6 +203,7 @@ init_db()
 class StartTrackRequest(BaseModel):
     task_id: str
     shipments: Optional[List[dict]] = None
+    capture_screenshot: Optional[bool] = False
 
 class SyncSingleRequest(BaseModel):
     task_id: str
@@ -210,6 +211,7 @@ class SyncSingleRequest(BaseModel):
     courier: str
     invoice_no: Optional[str] = ""
     platform_status: Optional[str] = ""
+    capture_screenshot: Optional[bool] = False
 
 class RestoreTaskRequest(BaseModel):
     task_id: str
@@ -369,7 +371,7 @@ async def upload_file(file: UploadFile = File(...)):
 
 
 # Real background task runner calling TrackingService
-async def run_tracking_simulation(task_id: str):
+async def run_tracking_simulation(task_id: str, capture_screenshot: bool = False):
     # Retrieve shipments from database
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -414,7 +416,7 @@ async def run_tracking_simulation(task_id: str):
         conn.close()
 
     try:
-        await TrackingService.track_shipments(shipments, task_id, progress_callback)
+        await TrackingService.track_shipments(shipments, task_id, progress_callback, capture_screenshot=capture_screenshot)
         conn = sqlite3.connect(DB_PATH)
         conn.execute("UPDATE tasks SET status = ? WHERE task_id = ?", ("completed", task_id))
         conn.commit()
@@ -431,11 +433,13 @@ async def run_tracking_simulation(task_id: str):
 class QuerySingleRequest(BaseModel):
     tracking_number: str
     courier: str
+    capture_screenshot: Optional[bool] = False
 
 @app.post('/api/track/query_single')
 async def query_single_shipment(body: QuerySingleRequest):
     awb = body.tracking_number.strip()
     courier = body.courier.strip()
+    capture_screenshot = body.capture_screenshot or False
     
     if not awb or not courier:
         raise HTTPException(status_code=400, detail="AWB number and Courier are required")
@@ -446,7 +450,7 @@ async def query_single_shipment(body: QuerySingleRequest):
         
     # Track immediately
     try:
-        result = await scraper.track(awb)
+        result = await scraper.track(awb, capture_screenshot=capture_screenshot)
         status = result["status"]
         last_location = result["last_location"]
         timestamp = result["timestamp"]
@@ -479,6 +483,7 @@ async def query_single_shipment(body: QuerySingleRequest):
 @app.post('/api/track/start')
 async def start_tracking(body: StartTrackRequest, background_tasks: BackgroundTasks):
     task_id = body.task_id
+    capture_screenshot = body.capture_screenshot or False
     
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -512,7 +517,7 @@ async def start_tracking(body: StartTrackRequest, background_tasks: BackgroundTa
             raise HTTPException(status_code=404, detail="Task ID not found")
             
     conn.close()
-    background_tasks.add_task(run_tracking_simulation, task_id)
+    background_tasks.add_task(run_tracking_simulation, task_id, capture_screenshot)
     return {"status": "started"}
 
 
@@ -521,13 +526,14 @@ async def sync_single_shipment(body: SyncSingleRequest):
     task_id = body.task_id
     awb = body.tracking_number
     courier = body.courier
+    capture_screenshot = body.capture_screenshot or False
     
     scraper = ScraperFactory.get_scraper(courier)
     if not scraper:
         raise HTTPException(status_code=400, detail=f"Courier '{courier}' not supported")
         
     try:
-        result = await scraper.track(awb)
+        result = await scraper.track(awb, capture_screenshot=capture_screenshot)
         
         from datetime import datetime
         last_sync_str = datetime.now().strftime("%d-%m-%Y %I:%M:%S %p")

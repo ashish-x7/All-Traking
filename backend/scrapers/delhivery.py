@@ -20,7 +20,7 @@ def fetch_delhivery(awb: str) -> dict:
         return json.loads(response.read().decode())
 
 class DelhiveryScraper(BaseScraper):
-    async def track(self, awb: str) -> dict:
+    async def track(self, awb: str, capture_screenshot: bool = False) -> dict:
         try:
             # Execute the network call in a thread pool to avoid blocking the asyncio event loop
             res_json = await asyncio.to_thread(fetch_delhivery, awb)
@@ -28,7 +28,8 @@ class DelhiveryScraper(BaseScraper):
                 return {
                     "status": "",
                     "last_location": "",
-                    "timestamp": "-"
+                    "timestamp": "-",
+                    "screenshot": "-"
                 }
             
             data = res_json["data"][0]
@@ -76,7 +77,16 @@ class DelhiveryScraper(BaseScraper):
                 if scanned_loc:
                     last_location = scanned_loc
             
-            # Take screenshot in background using playwright if successful
+            # If screenshot not requested, return immediately in super-fast mode (0.2s)
+            if not capture_screenshot:
+                return {
+                    "status": status,
+                    "last_location": last_location,
+                    "timestamp": timestamp,
+                    "screenshot": "-"
+                }
+            
+            # Take screenshot in background using playwright if requested
             screenshot_path = f"/static/screenshots/{awb}.png"
             try:
                 import os

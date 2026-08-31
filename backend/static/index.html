@@ -97,8 +97,18 @@
                     </div>
                 </div>
 
-                <!-- Action Buttons -->
+                <!-- Action Buttons & Mode Switch -->
                 <div class="control-group buttons-group">
+                    <div class="mode-toggle-container" title="Fast Mode fetches tracking instantly. Screenshot Mode captures proof images.">
+                        <label class="switch">
+                            <input type="checkbox" id="screenshot-toggle">
+                            <span class="slider round"></span>
+                        </label>
+                        <span class="mode-toggle-text" id="mode-toggle-label">
+                            <span class="fast-badge">⚡ Fast Track</span>
+                        </span>
+                    </div>
+
                     <button class="btn btn-primary" id="start-tracking-btn" disabled>
                         <i data-lucide="play"></i> Sync All
                     </button>
